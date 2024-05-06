@@ -40,6 +40,11 @@ func panicOnError() *dst.IfStmt {
 				},
 			},
 		},
+		Decs: dst.IfStmtDecorations{
+			NodeDecs: dst.NodeDecs{
+				After: dst.EmptyLine,
+			},
+		},
 	}
 }
 
@@ -130,39 +135,9 @@ func shutdownAgent(AgentVariableName string) *dst.ExprStmt {
 				},
 			},
 		},
-	}
-}
-
-func txnFromCtx() *dst.AssignStmt {
-	return &dst.AssignStmt{
-		Lhs: []dst.Expr{
-			&dst.Ident{
-				Name: "txn",
-			},
-		},
-		Tok: token.DEFINE,
-		Rhs: []dst.Expr{
-			&dst.CallExpr{
-				Fun: &dst.SelectorExpr{
-					X: &dst.Ident{
-						Name: "newrelic",
-					},
-					Sel: &dst.Ident{
-						Name: "FromContext",
-					},
-				},
-				Args: []dst.Expr{
-					&dst.CallExpr{
-						Fun: &dst.SelectorExpr{
-							X: &dst.Ident{
-								Name: "r",
-							},
-							Sel: &dst.Ident{
-								Name: "Context",
-							},
-						},
-					},
-				},
+		Decs: dst.ExprStmtDecorations{
+			NodeDecs: dst.NodeDecs{
+				Before: dst.EmptyLine,
 			},
 		},
 	}
@@ -187,17 +162,15 @@ func ImportAgent(fileset *token.FileSet, file *dst.File) string {
 }
 */
 
-func InjectAgent(n dst.Node, data *InstrumentationData) string {
+func InjectAgent(n dst.Node, data *InstrumentationData) {
 	if decl, ok := n.(*dst.FuncDecl); ok {
 		// only inject go agent into the main.main function
 		if data.pkg.Name == "main" && decl.Name.Name == "main" {
 			agentDecl := createAgentAST(data.appName, data.agentVariableName)
 			decl.Body.List = append(agentDecl, decl.Body.List...)
 			decl.Body.List = append(decl.Body.List, shutdownAgent(data.agentVariableName))
-			return ""
 		}
 	}
-	return ""
 }
 
 func txnAsParameter() *dst.Field {
@@ -262,7 +235,7 @@ func txnNewGoroutine() *dst.CallExpr {
 }
 
 // dfs search for async func block and injection of telemetry
-func traceAsyncFunc(stmt *dst.GoStmt, tracedFuncs map[string]bool) {
+func traceAsyncFunc(stmt *dst.GoStmt) {
 	// Go function literal
 	if fun, ok := stmt.Call.Fun.(*dst.FuncLit); ok {
 		// Add threaded txn to function arguments and parameters
@@ -271,13 +244,6 @@ func traceAsyncFunc(stmt *dst.GoStmt, tracedFuncs map[string]bool) {
 
 		// create async segment
 		fun.Body.List = append([]dst.Stmt{deferAsyncSegment()}, fun.Body.List...)
-	} else {
-		if fun, ok := stmt.Call.Fun.(*dst.CallExpr); ok {
-			fun.Args = append(fun.Args, txnNewGoroutine())
-			if sel, ok := fun.Fun.(*dst.SelectorExpr); ok {
-				tracedFuncs[sel.Sel.Name] = true
-			}
-		}
 	}
 }
 
@@ -333,12 +299,12 @@ func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
 	return ""
 }
 
-func txnNoticeError(errVariableName string) *dst.ExprStmt {
+func txnNoticeError(errVariableName, txnName string) *dst.ExprStmt {
 	return &dst.ExprStmt{
 		X: &dst.CallExpr{
 			Fun: &dst.SelectorExpr{
 				X: &dst.Ident{
-					Name: "txn",
+					Name: txnName,
 				},
 				Sel: &dst.Ident{
 					Name: "NoticeError",
@@ -356,29 +322,37 @@ func txnNoticeError(errVariableName string) *dst.ExprStmt {
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
 // with a newrelic transaction. All transactions are assumed to be named "txn"
-func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int) []dst.Stmt {
+func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, bool) {
 	errVar := findErrorVariable(stmt, pkg)
 	if errVar != "" {
 		newBody := []dst.Stmt{}
 		newBody = append(newBody, body[:bodyIndex+1]...)
-		newBody = append(newBody, txnNoticeError(errVar))
+		newBody = append(newBody, txnNoticeError(errVar, txnName))
 		newBody = append(newBody, body[bodyIndex+1:]...)
-		return newBody
+		return newBody, true
 	}
-	return body
+
+	return nil, false
 }
 
-func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) []dst.Stmt {
+// TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
+func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) ([]dst.Stmt, bool) {
 	instrumentedBody := body
+	addedInstrumentation := false
 	for i, stmt := range instrumentedBody {
 		switch v := stmt.(type) {
-		case *dst.GoStmt:
-			traceAsyncFunc(v, data.tracedFuncs)
 		case *dst.ForStmt:
 			TraceFunction(data, v.Body.List, txnName)
+		case *dst.GoStmt:
+			traceAsyncFunc(v)
 		case *dst.AssignStmt:
-			instrumentedBody = NoticeError(v, data.pkg, instrumentedBody, i)
+			body, ok := NoticeError(v, data.pkg, instrumentedBody, i, txnName)
+			if ok {
+				instrumentedBody = body
+				addedInstrumentation = true
+			}
+
 		}
 	}
-	return instrumentedBody
+	return instrumentedBody, addedInstrumentation
 }
