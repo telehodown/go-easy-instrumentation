@@ -351,7 +351,6 @@ func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) (
 				instrumentedBody = body
 				addedInstrumentation = true
 			}
-
 		}
 	}
 	return instrumentedBody, addedInstrumentation

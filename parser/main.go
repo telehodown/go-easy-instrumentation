@@ -23,12 +23,9 @@ const (
 	httpRespContext sourceKind = 4
 )
 
-type source struct {
-	kind sourceKind
-}
 type tracingData struct {
 	traced bool
-	source
+	kind   sourceKind
 }
 
 type InstrumentationData struct {
@@ -36,19 +33,7 @@ type InstrumentationData struct {
 	appName           string
 	agentVariableName string
 	tracedFuncs       map[string]tracingData
-}
-
-// AddTrace adds data to the cache to keep track of what top level functions may need additional downstream tracing
-func (d *InstrumentationData) AddTrace(functionName string, kind sourceKind) {
-	_, ok := d.tracedFuncs[functionName]
-	if !ok {
-		d.tracedFuncs[functionName] = tracingData{
-			traced: false,
-			source: source{
-				kind: kind,
-			},
-		}
-	}
+	imports           map[string][]string
 }
 
 func NewInstrumentationData(pkg *decorator.Package, appName, agentVariableName string) *InstrumentationData {
@@ -57,7 +42,37 @@ func NewInstrumentationData(pkg *decorator.Package, appName, agentVariableName s
 		appName:           appName,
 		agentVariableName: agentVariableName,
 		tracedFuncs:       map[string]tracingData{},
+		imports:           map[string][]string{},
 	}
+}
+
+func (d *InstrumentationData) AddImport(importName, fileName string) {
+
+}
+
+// AddTrace adds data to the cache to keep track of what top level functions may need additional downstream tracing
+func (d *InstrumentationData) AddTrace(functionName string, kind sourceKind) {
+	_, ok := d.tracedFuncs[functionName]
+	if !ok {
+		d.tracedFuncs[functionName] = tracingData{
+			traced: false,
+			kind:   kind,
+		}
+	}
+}
+
+// MarkTracingComplete identifies a function as being fully traced, preventing duplication of work.
+func (d *InstrumentationData) MarkTracingComplete(functionName string) {
+	data := d.tracedFuncs[functionName]
+	if !data.traced {
+		data.traced = true
+		d.tracedFuncs[functionName] = data
+	}
+}
+
+// IsTraced returns true if a function has already had tracing added to it.
+func (d *InstrumentationData) IsTraced(functionName string) bool {
+	return d.tracedFuncs[functionName].traced
 }
 
 type InstrumentationFunc func(n dst.Node, data *InstrumentationData)
@@ -126,8 +141,8 @@ func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableNa
 
 		fmt.Println(modifiedFile.String())
 
-		//patch := godiffpatch.GeneratePatch(file.Name.String(), File, modifiedFile.String())
-		//fmt.Println(patch)
+		//		patch := godiffpatch.GeneratePatch(file.Name.String(), File, modifiedFile.String())
+		//		fmt.Println(patch)
 
 	}
 
@@ -157,7 +172,8 @@ func main() {
 
 	GoGetAgent(packagePath)
 
-	pkgs, err := decorator.Load(&packages.Config{Dir: packagePath, Mode: packages.LoadSyntax}, packageName)
+	loadMode := packages.LoadSyntax
+	pkgs, err := decorator.Load(&packages.Config{Dir: packagePath, Mode: loadMode}, packageName)
 	if err != nil {
 		log.Fatal(err)
 	}
