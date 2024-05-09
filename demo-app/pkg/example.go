@@ -5,11 +5,12 @@ import (
 	"time"
 )
 
-func DoAThing(willError bool) error {
+// test complex returns
+func DoAThing(willError bool) (string, bool, error) {
 	time.Sleep(200 * time.Millisecond)
 	if willError {
-		return errors.New("this is an error")
+		return "thing not done", false, errors.New("this is an error")
 	}
 
-	return nil
+	return "thing complete", true, nil
 }
