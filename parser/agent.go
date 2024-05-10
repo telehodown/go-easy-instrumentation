@@ -339,7 +339,8 @@ func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, 
 func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) ([]dst.Stmt, bool) {
 	instrumentedBody := body
 	addedInstrumentation := false
-	for i, stmt := range instrumentedBody {
+	for i := 0; i < len(instrumentedBody); i++ {
+		stmt := instrumentedBody[i]
 		switch v := stmt.(type) {
 		case *dst.ForStmt:
 			TraceFunction(data, v.Body.List, txnName)
