@@ -135,7 +135,7 @@ func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableNa
 	// 	- import the agent
 	//	- initialize the agent
 	//	- shutdown the agent
-	preInstrumentation(data, InjectAgent, InstrumentHandleFunc, InstrumentHandler, InstrumentHttpClient)
+	preInstrumentation(data, InjectAgent, InstrumentHandleFunc, InstrumentHandler, InstrumentHttpClient, CannotInstrumentHttpMethod)
 
 	// Main Instrumentation Loop
 	//	- any instrumentation that consumes the agent

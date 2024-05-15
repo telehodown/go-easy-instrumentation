@@ -7,6 +7,7 @@ import (
 	"net/http"
 )
 
+// the most basic http handler function
 func index(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "hello world")
 }

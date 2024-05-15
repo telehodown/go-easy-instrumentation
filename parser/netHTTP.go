@@ -228,6 +228,34 @@ func InstrumentHttpClient(n dst.Node, data *InstrumentationData, parent ParentFu
 	}
 }
 
+func cannotTraceOutboundHttp(method string) []string {
+	return []string{
+		fmt.Sprintf("// the \"%s\" net/http method can not be instrumented and its outbound traffic can not be traced", method),
+		"// please see these examples of code patterns for external http calls that can be instrumented:",
+		"// https://docs.newrelic.com/docs/apm/agents/go-agent/configuration/distributed-tracing-go-agent/#make-http-requests",
+		"//",
+	}
+}
+
+func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationData, parent ParentFunction) {
+	var call *dst.CallExpr
+	stmt, ok := n.(*dst.AssignStmt)
+	if ok {
+		if len(stmt.Rhs) == 1 {
+			call, ok = stmt.Rhs[0].(*dst.CallExpr)
+			if ok {
+				funcName, _ := getHttpMethodAndClient(call)
+				if funcName != "" {
+					switch funcName {
+					case HttpGet, HttpPost, HttpPostForm, HttpHead:
+						n.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName)...)
+					}
+				}
+			}
+		}
+	}
+}
+
 // TODO
 func startExternalSegment() *dst.AssignStmt {
 	return nil
@@ -238,23 +266,20 @@ func endExternalSegment() *dst.CallExpr {
 	return nil
 }
 
+func addTxnToRequestContext() *dst.AssignStmt {
+	return nil
+}
+
 func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
 	if len(stmt.Rhs) == 1 {
 		call, ok := stmt.Rhs[0].(*dst.CallExpr)
 		if ok {
 			funcName, clientVar := getHttpMethodAndClient(call)
-			if funcName != "" {
-				switch funcName {
-				case HttpDo:
+			if funcName == HttpDo {
+				if clientVar == HttpDefaultClientVariable {
 					// create external segment to wrap calls made with default client
-					if clientVar == HttpDefaultClientVariable {
-
-					} else {
-
-					}
-				case HttpGet, HttpPost, HttpPostForm, HttpHead:
-					// add a comment telling user we can not instrument
-					fmt.Println("Add comment for func: " + funcName)
+				} else {
+					// add txn into request objec
 				}
 			}
 		}
