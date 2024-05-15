@@ -162,7 +162,7 @@ func ImportAgent(fileset *token.FileSet, file *dst.File) string {
 }
 */
 
-func InjectAgent(n dst.Node, data *InstrumentationData) {
+func InjectAgent(n dst.Node, data *InstrumentationData, parent ParentFunction) {
 	if decl, ok := n.(*dst.FuncDecl); ok {
 		// only inject go agent into the main.main function
 		if data.pkg.Name == "main" && decl.Name.Name == "main" {
@@ -283,22 +283,6 @@ func isNewRelicMethod(call *dst.CallExpr) bool {
 	return false
 }
 
-func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
-	if len(stmt.Rhs) == 1 {
-		if call, ok := stmt.Rhs[0].(*dst.CallExpr); ok {
-			if !isNewRelicMethod(call) {
-				if errIndex, ok := errorReturns(call, pkg); ok {
-					expr := stmt.Lhs[errIndex]
-					if ident, ok := expr.(*dst.Ident); ok {
-						return ident.Name
-					}
-				}
-			}
-		}
-	}
-	return ""
-}
-
 func txnNoticeError(errVariableName, txnName string) *dst.ExprStmt {
 	return &dst.ExprStmt{
 		X: &dst.CallExpr{
@@ -319,20 +303,36 @@ func txnNoticeError(errVariableName, txnName string) *dst.ExprStmt {
 	}
 }
 
+func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
+	if len(stmt.Rhs) == 1 {
+		if call, ok := stmt.Rhs[0].(*dst.CallExpr); ok {
+			if !isNewRelicMethod(call) {
+				if errIndex, ok := errorReturns(call, pkg); ok {
+					expr := stmt.Lhs[errIndex]
+					if ident, ok := expr.(*dst.Ident); ok {
+						return ident.Name
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
 // with a newrelic transaction. All transactions are assumed to be named "txn"
-func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, bool) {
+func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
 	errVar := findErrorVariable(stmt, pkg)
 	if errVar != "" {
 		newBody := []dst.Stmt{}
 		newBody = append(newBody, body[:bodyIndex+1]...)
 		newBody = append(newBody, txnNoticeError(errVar, txnName))
 		newBody = append(newBody, body[bodyIndex+1:]...)
-		return newBody, true
+		return newBody, 1
 	}
 
-	return nil, false
+	return nil, 0
 }
 
 // TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
@@ -347,10 +347,18 @@ func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) (
 		case *dst.GoStmt:
 			traceAsyncFunc(v)
 		case *dst.AssignStmt:
-			body, ok := NoticeError(v, data.pkg, instrumentedBody, i, txnName)
-			if ok {
+			body, addedLines := NoticeError(v, data.pkg, instrumentedBody, i, txnName)
+			if body != nil {
 				instrumentedBody = body
 				addedInstrumentation = true
+				i += addedLines
+			}
+
+			body, addedLines = ExternalHttpCall(v, data.pkg, instrumentedBody, i, txnName)
+			if body != nil {
+				instrumentedBody = body
+				addedInstrumentation = true
+				i += addedLines
 			}
 		}
 	}

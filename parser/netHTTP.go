@@ -1,25 +1,61 @@
 package main
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 
 	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
 )
 
-func isNetHTTPHandleFunc(n *dst.CallExpr) bool {
+const (
+	NetHttp = "net/http"
+
+	// Methods that can be instrumented
+	HttpHandleFunc = "HandleFunc"
+	HttpNewRequest = "NewRequest"
+	HttpDo         = "Do"
+
+	// methods cannot be instrumented
+	HttpGet      = "Get"
+	HttpPost     = "Post"
+	HttpHead     = "Head"
+	HttpPostForm = "PostForm"
+
+	// default net/http client variable
+	HttpDefaultClientVariable = "http.DefaultClient"
+	// default net/http client identifier
+	HttpDefaultClient = "DefaultClient"
+	// http client type
+	HttpClientType = `*net/http.Client`
+)
+
+// returns (method name, client variable name)
+func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
 	ident, ok := n.Fun.(*dst.Ident)
-	if ok {
-		return ident.Path == "net/http" && ident.Name == "HandleFunc"
+	if ok && ident.Path == NetHttp {
+		return ident.Name, ""
+	}
+	sel, ok := n.Fun.(*dst.SelectorExpr)
+	// Find instances of http Do calls ---> new idea, always inject txn into request obj. Always add rtrippr to client, and if default client Do, then just wrap
+	if ok && sel.Sel.Name == HttpDo {
+		ident, ok := sel.X.(*dst.Ident)
+		if ok {
+			if ident.Path == NetHttp && ident.Name == HttpDefaultClient {
+				return sel.Sel.Name, HttpDefaultClientVariable
+			}
+		}
 	}
 
-	return false
+	return "", ""
 }
 
-func InstrumentHandleFunc(n dst.Node, data *InstrumentationData) {
+func InstrumentHandleFunc(n dst.Node, data *InstrumentationData, parent ParentFunction) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		if isNetHTTPHandleFunc(callExpr) && len(callExpr.Args) == 2 {
+		funcName, _ := getHttpMethodAndClient(callExpr)
+		if funcName == HttpHandleFunc && len(callExpr.Args) == 2 {
 			// Capture name of handle funcs for deeper instrumentation
 			handleFunc, ok := callExpr.Args[1].(*dst.Ident)
 			if ok {
@@ -128,12 +164,12 @@ func isHttpHandler(params []*dst.Field, data *InstrumentationData) bool {
 
 // Optimistically guess if a function is a handler func based on its contents
 // Pre-instrumentation function
-func InstrumentHandler(n dst.Node, data *InstrumentationData) {
+func InstrumentHandler(n dst.Node, data *InstrumentationData, parent ParentFunction) {
 	ident, isIdent := n.(*dst.Ident)
 	if isIdent && ident.Obj != nil && ident.Obj.Decl != nil {
 		fn, isFn := ident.Obj.Decl.(*dst.FuncDecl)
 		if isFn && isHttpHandler(fn.Type.Params.List, data) {
-			txnName := "nrTxn"
+			txnName := newRelicTxnVariableName
 			body, ok := TraceFunction(data, fn.Body.List, txnName)
 			if ok {
 				body = append([]dst.Stmt{txnFromCtx(txnName)}, body...)
@@ -141,4 +177,87 @@ func InstrumentHandler(n dst.Node, data *InstrumentationData) {
 			}
 		}
 	}
+}
+
+func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *dst.AssignStmt {
+	return &dst.AssignStmt{
+		Lhs: []dst.Expr{
+			&dst.SelectorExpr{
+				X:   dst.Clone(clientVariable).(dst.Expr),
+				Sel: dst.NewIdent("Transport"),
+			},
+		},
+		Tok: token.ASSIGN,
+		Rhs: []dst.Expr{
+			&dst.CallExpr{
+				Fun: &dst.SelectorExpr{
+					X:   dst.NewIdent("newrelic"),
+					Sel: dst.NewIdent("NewRoundTripper"),
+				},
+				Args: []dst.Expr{
+					&dst.SelectorExpr{
+						X:   dst.Clone(clientVariable).(dst.Expr),
+						Sel: dst.NewIdent("Transport"),
+					},
+				},
+			},
+		},
+		Decs: dst.AssignStmtDecorations{
+			NodeDecs: dst.NodeDecs{
+				After: spacingAfter,
+			},
+		},
+	}
+}
+
+// InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
+// Returns modified function body, and number of lines added ahead of the current index
+func InstrumentHttpClient(n dst.Node, data *InstrumentationData, parent ParentFunction) {
+	stmt, ok := n.(*dst.AssignStmt)
+	if ok && len(stmt.Lhs) == 1 {
+		clientVar := stmt.Lhs[0]
+		astClientVar := data.pkg.Decorator.Ast.Nodes[clientVar]
+		expr, ok := astClientVar.(ast.Expr)
+		if ok && data.pkg.TypesInfo.TypeOf(expr).String() == HttpClientType {
+			// add new line that adds roundtripper to transport
+			if parent.cursor.Index() > 0 {
+				parent.cursor.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
+				stmt.Decs.After = dst.None
+			}
+		}
+	}
+}
+
+// TODO
+func startExternalSegment() *dst.AssignStmt {
+	return nil
+}
+
+// TODO
+func endExternalSegment() *dst.CallExpr {
+	return nil
+}
+
+func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
+	if len(stmt.Rhs) == 1 {
+		call, ok := stmt.Rhs[0].(*dst.CallExpr)
+		if ok {
+			funcName, clientVar := getHttpMethodAndClient(call)
+			if funcName != "" {
+				switch funcName {
+				case HttpDo:
+					// create external segment to wrap calls made with default client
+					if clientVar == HttpDefaultClientVariable {
+
+					} else {
+
+					}
+				case HttpGet, HttpPost, HttpPostForm, HttpHead:
+					// add a comment telling user we can not instrument
+					fmt.Println("Add comment for func: " + funcName)
+				}
+			}
+		}
+	}
+	return nil, 0
 }

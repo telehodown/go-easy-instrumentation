@@ -23,9 +23,14 @@ const (
 	httpRespContext sourceKind = 4
 )
 
+var (
+	newRelicTxnVariableName = "nrTxn"
+)
+
 type tracingData struct {
-	traced bool
-	kind   sourceKind
+	traced  bool
+	kind    sourceKind
+	varName string
 }
 
 type InstrumentationData struct {
@@ -34,6 +39,10 @@ type InstrumentationData struct {
 	agentVariableName string
 	tracedFuncs       map[string]tracingData
 	imports           map[string][]string
+}
+
+type ParentFunction struct {
+	cursor *dstutil.Cursor
 }
 
 func NewInstrumentationData(pkg *decorator.Package, appName, agentVariableName string) *InstrumentationData {
@@ -75,7 +84,7 @@ func (d *InstrumentationData) IsTraced(functionName string) bool {
 	return d.tracedFuncs[functionName].traced
 }
 
-type InstrumentationFunc func(n dst.Node, data *InstrumentationData)
+type InstrumentationFunc func(n dst.Node, data *InstrumentationData, parent ParentFunction)
 
 func preInstrumentation(data *InstrumentationData, instrumentationFunctions ...InstrumentationFunc) {
 	for fileIndx, file := range data.pkg.Syntax {
@@ -85,7 +94,7 @@ func preInstrumentation(data *InstrumentationData, instrumentationFunctions ...I
 					n := c.Node()
 					if n != nil {
 						for _, instFunc := range instrumentationFunctions {
-							instFunc(n, data)
+							instFunc(n, data, ParentFunction{c})
 						}
 					}
 					return true
@@ -106,7 +115,7 @@ func downstreamInstrumentation(data *InstrumentationData, instrumentationFunctio
 					n := c.Node()
 					if n != nil {
 						for _, instFunc := range instrumentationFunctions {
-							instFunc(n, data)
+							instFunc(n, data, ParentFunction{c})
 						}
 					}
 					return true
@@ -126,7 +135,7 @@ func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableNa
 	// 	- import the agent
 	//	- initialize the agent
 	//	- shutdown the agent
-	preInstrumentation(data, InjectAgent, InstrumentHandleFunc, InstrumentHandler)
+	preInstrumentation(data, InjectAgent, InstrumentHandleFunc, InstrumentHandler, InstrumentHttpClient)
 
 	// Main Instrumentation Loop
 	//	- any instrumentation that consumes the agent

@@ -10,6 +10,7 @@ func main() {
 	http.HandleFunc("/error", noticeError)
 	http.HandleFunc("/external", external)
 	http.HandleFunc("/roundtrip", roundtripper)
+	http.HandleFunc("/basicExternal", basicExternal)
 
 	http.ListenAndServe(":8000", nil)
 }
