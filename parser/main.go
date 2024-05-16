@@ -11,6 +11,7 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/decorator/resolver/gopackages"
 	"github.com/dave/dst/dstutil"
+	godiffpatch "github.com/sourcegraph/go-diff-patch"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -142,16 +143,19 @@ func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableNa
 
 	r := decorator.NewRestorerWithImports(pkgPath, gopackages.New(pkg.Dir))
 	for _, file := range pkg.Syntax {
+		fName := pkg.Decorator.Filenames[file]
+		originalFile, err := os.ReadFile(fName)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		modifiedFile := bytes.NewBuffer([]byte{})
 		if err := r.Fprint(modifiedFile, file); err != nil {
 			panic(err)
 		}
 
-		fmt.Println(modifiedFile.String())
-
-		//		patch := godiffpatch.GeneratePatch(file.Name.String(), File, modifiedFile.String())
-		//		fmt.Println(patch)
-
+		patch := godiffpatch.GeneratePatch(file.Name.String(), string(originalFile), modifiedFile.String())
+		fmt.Println(patch)
 	}
 
 }
