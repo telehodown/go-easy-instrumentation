@@ -335,6 +335,7 @@ func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, 
 	return nil, 0
 }
 
+// TODO, rething this using a stack and using the cursor to simplify the logic
 // TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
 func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) ([]dst.Stmt, bool) {
 	instrumentedBody := body

@@ -38,7 +38,6 @@ func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
 		return ident.Name, ""
 	}
 	sel, ok := n.Fun.(*dst.SelectorExpr)
-	// Find instances of http Do calls ---> new idea, always inject txn into request obj. Always add rtrippr to client, and if default client Do, then just wrap
 	if ok && sel.Sel.Name == HttpDo {
 		ident, ok := sel.X.(*dst.Ident)
 		if ok {
@@ -46,6 +45,7 @@ func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
 				return sel.Sel.Name, HttpDefaultClientVariable
 			}
 		}
+		return sel.Sel.Name, ""
 	}
 
 	return "", ""
@@ -266,8 +266,28 @@ func endExternalSegment() *dst.CallExpr {
 	return nil
 }
 
-func addTxnToRequestContext() *dst.AssignStmt {
-	return nil
+func addTxnToRequestContext(request dst.Expr, txnVar string, spacingBefore dst.SpaceType) *dst.AssignStmt {
+	return &dst.AssignStmt{
+		Tok: token.ASSIGN,
+		Lhs: []dst.Expr{dst.Clone(request).(dst.Expr)},
+		Rhs: []dst.Expr{
+			&dst.CallExpr{
+				Fun: &dst.SelectorExpr{
+					X:   dst.NewIdent("newrelic"),
+					Sel: dst.NewIdent("RequestWithTransactionContext"),
+				},
+				Args: []dst.Expr{
+					dst.Clone(request).(dst.Expr),
+					dst.NewIdent(txnVar),
+				},
+			},
+		},
+		Decs: dst.AssignStmtDecorations{
+			NodeDecs: dst.NodeDecs{
+				Before: spacingBefore,
+			},
+		},
+	}
 }
 
 func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
@@ -279,7 +299,13 @@ func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.S
 				if clientVar == HttpDefaultClientVariable {
 					// create external segment to wrap calls made with default client
 				} else {
-					// add txn into request objec
+					// add txn into request object
+					newBody := []dst.Stmt{}
+					newBody = append(newBody, body[:bodyIndex-1]...)
+					newBody = append(newBody, addTxnToRequestContext(call.Args[0], txnName, stmt.Decs.Before))
+					newBody = append(newBody, body[bodyIndex-1:]...)
+					stmt.Decs.Before = dst.None
+					return newBody, 0
 				}
 			}
 		}
