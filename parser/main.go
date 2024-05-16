@@ -3,110 +3,204 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/printer"
-	"go/token"
+	"log"
 	"os"
+	"os/exec"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/decorator/resolver/gopackages"
+	"github.com/dave/dst/dstutil"
+	"golang.org/x/tools/go/packages"
 
 	godiffpatch "github.com/sourcegraph/go-diff-patch"
 )
 
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
+type sourceKind uint8
+
+const (
+	txnInCtx        sourceKind = 1
+	txnArgument     sourceKind = 2
+	appArgument     sourceKind = 3
+	httpRespContext sourceKind = 4
+)
+
+var (
+	newRelicTxnVariableName = "nrTxn"
+)
+
+type tracingData struct {
+	traced bool
+	kind   sourceKind
 }
 
 type InstrumentationData struct {
-	Fset              *token.FileSet
-	AstFile           *ast.File
-	AppName           string
-	AgentVariableName string
+	pkg               *decorator.Package
+	appName           string
+	agentVariableName string
+	tracedFuncs       map[string]tracingData
+	imports           map[string][]string
 }
 
-type InstrumentationFunc func(n ast.Node, data *InstrumentationData) string
+type ParentFunction struct {
+	cursor *dstutil.Cursor
+}
 
-func preInstrumentation(data *InstrumentationData, instrumentationFunctions ...InstrumentationFunc) []string {
-	downstreamFuncs := []string{}
+func NewInstrumentationData(pkg *decorator.Package, appName, agentVariableName string) *InstrumentationData {
+	return &InstrumentationData{
+		pkg:               pkg,
+		appName:           appName,
+		agentVariableName: agentVariableName,
+		tracedFuncs:       map[string]tracingData{},
+		imports:           map[string][]string{},
+	}
+}
 
-	for i, d := range data.AstFile.Decls {
-		newNode := astutil.Apply(d, nil, func(c *astutil.Cursor) bool {
-			n := c.Node()
-			if n != nil {
-				for _, instFunc := range instrumentationFunctions {
-					downstream := instFunc(n, data)
-					if downstream != "" {
-						downstreamFuncs = append(downstreamFuncs, downstream)
+func (d *InstrumentationData) AddImport(importName, fileName string) {
+
+}
+
+// AddTrace adds data to the cache to keep track of what top level functions may need additional downstream tracing
+func (d *InstrumentationData) AddTrace(functionName string, kind sourceKind) {
+	_, ok := d.tracedFuncs[functionName]
+	if !ok {
+		d.tracedFuncs[functionName] = tracingData{
+			traced: false,
+			kind:   kind,
+		}
+	}
+}
+
+// MarkTracingComplete identifies a function as being fully traced, preventing duplication of work.
+func (d *InstrumentationData) MarkTracingComplete(functionName string) {
+	data := d.tracedFuncs[functionName]
+	if !data.traced {
+		data.traced = true
+		d.tracedFuncs[functionName] = data
+	}
+}
+
+// IsTraced returns true if a function has already had tracing added to it.
+func (d *InstrumentationData) IsTraced(functionName string) bool {
+	return d.tracedFuncs[functionName].traced
+}
+
+type InstrumentationFunc func(n dst.Node, data *InstrumentationData, parent ParentFunction)
+
+func preInstrumentation(data *InstrumentationData, instrumentationFunctions ...InstrumentationFunc) {
+	for fileIndx, file := range data.pkg.Syntax {
+		for declIndex, d := range file.Decls {
+			if fn, isFn := d.(*dst.FuncDecl); isFn {
+				modifiedFunc := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
+					n := c.Node()
+					if n != nil {
+						for _, instFunc := range instrumentationFunctions {
+							instFunc(n, data, ParentFunction{c})
+						}
 					}
+					return true
+				})
+				if modifiedFunc != nil {
+					data.pkg.Syntax[fileIndx].Decls[declIndex] = modifiedFunc.(*dst.FuncDecl)
 				}
-			}
-			return true
-		})
-
-		if n, ok := newNode.(*ast.FuncDecl); ok {
-			data.AstFile.Decls[i] = n
-		}
-	}
-
-	return downstreamFuncs
-}
-
-func mainInstrumentationLoop(data *InstrumentationData, instrumentationFunctions ...InstrumentationFunc) {
-	for i, d := range data.AstFile.Decls {
-		if fn, isFn := d.(*ast.FuncDecl); isFn {
-			modifiedFunc := astutil.Apply(fn, nil, func(c *astutil.Cursor) bool {
-				n := c.Node()
-				for _, instFunc := range instrumentationFunctions {
-					instFunc(n, data)
-				}
-				return true
-			})
-			if modifiedFunc != nil {
-				data.AstFile.Decls[i] = modifiedFunc.(*ast.FuncDecl)
 			}
 		}
 	}
 }
 
-func InstrumentFile(fileName, appName, agentVariableName string) {
-	file, err := os.ReadFile(fileName)
-	must(err)
-
-	fset := token.NewFileSet()
-	astFile, err := parser.ParseFile(fset, fileName, file, parser.ParseComments)
-	must(err)
-
-	data := InstrumentationData{
-		Fset:              fset,
-		AstFile:           astFile,
-		AgentVariableName: agentVariableName,
-		AppName:           appName,
+func downstreamInstrumentation(data *InstrumentationData, instrumentationFunctions ...InstrumentationFunc) {
+	for fileIndex, file := range data.pkg.Syntax {
+		for declIndex, d := range file.Decls {
+			if fn, isFn := d.(*dst.FuncDecl); isFn {
+				modifiedFunc := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
+					n := c.Node()
+					if n != nil {
+						for _, instFunc := range instrumentationFunctions {
+							instFunc(n, data, ParentFunction{c})
+						}
+					}
+					return true
+				})
+				if modifiedFunc != nil {
+					data.pkg.Syntax[fileIndex].Decls[declIndex] = modifiedFunc.(*dst.FuncDecl)
+				}
+			}
+		}
 	}
+}
+
+func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableName string) {
+	data := NewInstrumentationData(pkg, appName, agentVariableName)
 
 	// Pre Instrumentation Steps
 	// 	- import the agent
 	//	- initialize the agent
 	//	- shutdown the agent
-	downstreamFuncs := preInstrumentation(&data, InjectAgent, GetHandleFuncs)
-	fmt.Printf("Downstream funcs: %+v\n", downstreamFuncs)
+	preInstrumentation(data, InjectAgent, InstrumentHandleFunc, InstrumentHandler, InstrumentHttpClient, CannotInstrumentHttpMethod)
 
 	// Main Instrumentation Loop
 	//	- any instrumentation that consumes the agent
-	mainInstrumentationLoop(&data, InstrumentHandleFunc)
+	downstreamInstrumentation(data)
 
-	modifiedFile := bytes.NewBuffer([]byte{})
-	printer.Fprint(modifiedFile, fset, astFile)
+	r := decorator.NewRestorerWithImports(pkgPath, gopackages.New(pkg.Dir))
+	for _, file := range pkg.Syntax {
+		fName := pkg.Decorator.Filenames[file]
+		originalFile, err := os.ReadFile(fName)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	patch := godiffpatch.GeneratePatch("../demo-app/main.go", string(file), modifiedFile.String())
-	fmt.Println(patch)
+		modifiedFile := bytes.NewBuffer([]byte{})
+		if err := r.Fprint(modifiedFile, file); err != nil {
+			panic(err)
+		}
+
+		patch := godiffpatch.GeneratePatch(fName[1:], string(originalFile), modifiedFile.String())
+		wd, _ := os.Getwd()
+		diffFile := fmt.Sprintf("%s/%s.diff", wd, pkg.Package.ID)
+		fmt.Println("FileName: " + diffFile)
+		f, err := os.OpenFile(diffFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Println(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(patch); err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func GoGetAgent(packagePath string) {
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if packagePath != wd {
+		os.Chdir(packagePath)
+	}
+
+	cmd := exec.Command("go", "get", "github.com/newrelic/go-agent/v3")
+	if err := cmd.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
-	fileName := "../demo-app/main.go"
+	packagePath := "../demo-app"
+	packageName := "."
 	appName := "AST Example"
 	agentVariableName := "NewRelicAgent"
-	InstrumentFile(fileName, appName, agentVariableName)
+
+	//GoGetAgent(packagePath)
+
+	loadMode := packages.LoadSyntax
+	pkgs, err := decorator.Load(&packages.Config{Dir: packagePath, Mode: loadMode}, packageName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, pkg := range pkgs {
+		InstrumentPackage(pkg, packagePath, appName, agentVariableName)
+	}
 }
