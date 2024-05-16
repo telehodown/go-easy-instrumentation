@@ -156,9 +156,18 @@ func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableNa
 		}
 
 		patch := godiffpatch.GeneratePatch(fName[1:], string(originalFile), modifiedFile.String())
-		fmt.Println(patch)
+		wd, _ := os.Getwd()
+		diffFile := fmt.Sprintf("%s/%s.diff", wd, pkg.Package.ID)
+		fmt.Println("FileName: " + diffFile)
+		f, err := os.OpenFile(diffFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Println(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(patch); err != nil {
+			log.Println(err)
+		}
 	}
-
 }
 
 func GoGetAgent(packagePath string) {
@@ -183,7 +192,7 @@ func main() {
 	appName := "AST Example"
 	agentVariableName := "NewRelicAgent"
 
-	GoGetAgent(packagePath)
+	//GoGetAgent(packagePath)
 
 	loadMode := packages.LoadSyntax
 	pkgs, err := decorator.Load(&packages.Config{Dir: packagePath, Mode: loadMode}, packageName)
