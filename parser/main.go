@@ -154,7 +154,7 @@ func InstrumentPackage(pkg *decorator.Package, pkgPath, appName, agentVariableNa
 			panic(err)
 		}
 
-		patch := godiffpatch.GeneratePatch(file.Name.String(), string(originalFile), modifiedFile.String())
+		patch := godiffpatch.GeneratePatch(fName[1:], string(originalFile), modifiedFile.String())
 		fmt.Println(patch)
 	}
 
