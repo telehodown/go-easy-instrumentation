@@ -11,8 +11,9 @@ import (
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/decorator/resolver/gopackages"
 	"github.com/dave/dst/dstutil"
-	godiffpatch "github.com/sourcegraph/go-diff-patch"
 	"golang.org/x/tools/go/packages"
+
+	godiffpatch "github.com/sourcegraph/go-diff-patch"
 )
 
 type sourceKind uint8
