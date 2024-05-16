@@ -59,6 +59,8 @@ func roundtripper(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := client.Do(request)
+
+	// this is an unusual spacing and comment pattern to test the decoration preservation
 	if err != nil {
 		io.WriteString(w, err.Error())
 		return

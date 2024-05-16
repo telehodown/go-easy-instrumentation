@@ -256,7 +256,6 @@ func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationData, parent Pa
 	}
 }
 
-// TODO
 func startExternalSegment(request dst.Expr, txnVar, segmentVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
 	// copy all preceeding decorations from the previous node
 	decs := dst.AssignStmtDecorations{
@@ -359,19 +358,17 @@ func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.S
 					segmentName := "externalSegment"
 					newBody := []dst.Stmt{}
 					newBody = append(newBody, body[:bodyIndex-1]...)
-					newBody = append(newBody, startExternalSegment(requestObject, txnName, segmentName, &stmt.Decs.NodeDecs))
+					newBody = append(newBody, startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
 					newBody = append(newBody, body[bodyIndex-1])
-					newBody = append(newBody, endExternalSegment(segmentName, &stmt.Decs.NodeDecs))
+					newBody = append(newBody, endExternalSegment(segmentName, stmt.Decorations()))
 					newBody = append(newBody, body[bodyIndex:]...)
-
 					return newBody, 2
 				} else {
 					// add txn into request object
 					newBody := []dst.Stmt{}
 					newBody = append(newBody, body[:bodyIndex-1]...)
-					newBody = append(newBody, addTxnToRequestContext(requestObject, txnName, &stmt.Decs.NodeDecs))
+					newBody = append(newBody, addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
 					newBody = append(newBody, body[bodyIndex-1:]...)
-
 					return newBody, 1
 				}
 			}

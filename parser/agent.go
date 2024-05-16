@@ -283,7 +283,19 @@ func isNewRelicMethod(call *dst.CallExpr) bool {
 	return false
 }
 
-func txnNoticeError(errVariableName, txnName string) *dst.ExprStmt {
+func txnNoticeError(errVariableName, txnName string, nodeDecs *dst.NodeDecs) *dst.ExprStmt {
+	// copy all decs below the current statement into this statement
+	decs := dst.ExprStmtDecorations{
+		NodeDecs: dst.NodeDecs{
+			After: nodeDecs.After,
+			End:   nodeDecs.End,
+		},
+	}
+
+	// remove coppied decs from above node
+	nodeDecs.After = dst.None
+	nodeDecs.End.Clear()
+
 	return &dst.ExprStmt{
 		X: &dst.CallExpr{
 			Fun: &dst.SelectorExpr{
@@ -300,6 +312,7 @@ func txnNoticeError(errVariableName, txnName string) *dst.ExprStmt {
 				},
 			},
 		},
+		Decs: decs,
 	}
 }
 
@@ -327,7 +340,7 @@ func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, 
 	if errVar != "" {
 		newBody := []dst.Stmt{}
 		newBody = append(newBody, body[:bodyIndex+1]...)
-		newBody = append(newBody, txnNoticeError(errVar, txnName))
+		newBody = append(newBody, txnNoticeError(errVar, txnName, stmt.Decorations()))
 		newBody = append(newBody, body[bodyIndex+1:]...)
 		return newBody, 1
 	}
