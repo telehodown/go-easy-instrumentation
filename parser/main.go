@@ -178,8 +178,8 @@ func GoGetAgent(packagePath string) {
 }
 
 func main() {
-	packagePath := "/Users/emiliogarcia/Dev/go-agent-pre-instrumentation/demo-app"
-	packageName := "."
+	packagePath := "../demo-app"
+	packageName := "demo-app"
 	appName := "AST Example"
 	agentVariableName := "NewRelicAgent"
 
