@@ -179,7 +179,7 @@ func GoGetAgent(packagePath string) {
 
 func main() {
 	packagePath := "../demo-app"
-	packageName := "demo-app"
+	packageName := "."
 	appName := "AST Example"
 	agentVariableName := "NewRelicAgent"
 
