@@ -257,16 +257,75 @@ func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationData, parent Pa
 }
 
 // TODO
-func startExternalSegment() *dst.AssignStmt {
-	return nil
+func startExternalSegment(request dst.Expr, txnVar, segmentVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
+	// copy all preceeding decorations from the previous node
+	decs := dst.AssignStmtDecorations{
+		NodeDecs: dst.NodeDecs{
+			Before: nodeDecs.Before,
+			Start:  nodeDecs.Start,
+		},
+	}
+
+	// Clear the decs from the previous node since they are being moved up
+	nodeDecs.Before = dst.None
+	nodeDecs.Start.Clear()
+
+	return &dst.AssignStmt{
+		Tok: token.DEFINE,
+		Lhs: []dst.Expr{
+			dst.NewIdent(segmentVar),
+		},
+		Rhs: []dst.Expr{
+			&dst.CallExpr{
+				Fun: &dst.SelectorExpr{
+					X:   dst.NewIdent("newrelic"),
+					Sel: dst.NewIdent("StartExternalSegment"),
+				},
+				Args: []dst.Expr{
+					dst.NewIdent(txnVar),
+					dst.Clone(request).(dst.Expr),
+				},
+			},
+		},
+		Decs: decs,
+	}
 }
 
-// TODO
-func endExternalSegment() *dst.CallExpr {
-	return nil
+func endExternalSegment(segmentName string, nodeDecs *dst.NodeDecs) *dst.ExprStmt {
+	decs := dst.ExprStmtDecorations{
+		NodeDecs: dst.NodeDecs{
+			After: nodeDecs.After,
+			End:   nodeDecs.End,
+		},
+	}
+
+	nodeDecs.After = dst.None
+	nodeDecs.End.Clear()
+
+	return &dst.ExprStmt{
+		X: &dst.CallExpr{
+			Fun: &dst.SelectorExpr{
+				X:   dst.NewIdent(segmentName),
+				Sel: dst.NewIdent("End"),
+			},
+		},
+		Decs: decs,
+	}
 }
 
-func addTxnToRequestContext(request dst.Expr, txnVar string, spacingBefore dst.SpaceType) *dst.AssignStmt {
+func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
+	// Copy all decs above prior statement into this one
+	decs := dst.AssignStmtDecorations{
+		NodeDecs: dst.NodeDecs{
+			Before: nodeDecs.Before,
+			Start:  nodeDecs.Start,
+		},
+	}
+
+	// Clear the decs from the previous node since they are being moved up
+	nodeDecs.Before = dst.None
+	nodeDecs.Start.Clear()
+
 	return &dst.AssignStmt{
 		Tok: token.ASSIGN,
 		Lhs: []dst.Expr{dst.Clone(request).(dst.Expr)},
@@ -282,30 +341,38 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, spacingBefore dst.S
 				},
 			},
 		},
-		Decs: dst.AssignStmtDecorations{
-			NodeDecs: dst.NodeDecs{
-				Before: spacingBefore,
-			},
-		},
+		Decs: decs,
 	}
 }
 
+// ExternalHttpCall finds and instruments external  net/http calls to the method http.Do.
+// It returns a modified function body, and the number of lines that were added.
 func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
 	if len(stmt.Rhs) == 1 {
 		call, ok := stmt.Rhs[0].(*dst.CallExpr)
 		if ok {
 			funcName, clientVar := getHttpMethodAndClient(call)
 			if funcName == HttpDo {
+				requestObject := call.Args[0]
 				if clientVar == HttpDefaultClientVariable {
 					// create external segment to wrap calls made with default client
+					segmentName := "externalSegment"
+					newBody := []dst.Stmt{}
+					newBody = append(newBody, body[:bodyIndex-1]...)
+					newBody = append(newBody, startExternalSegment(requestObject, txnName, segmentName, &stmt.Decs.NodeDecs))
+					newBody = append(newBody, body[bodyIndex-1])
+					newBody = append(newBody, endExternalSegment(segmentName, &stmt.Decs.NodeDecs))
+					newBody = append(newBody, body[bodyIndex:]...)
+
+					return newBody, 2
 				} else {
 					// add txn into request object
 					newBody := []dst.Stmt{}
 					newBody = append(newBody, body[:bodyIndex-1]...)
-					newBody = append(newBody, addTxnToRequestContext(call.Args[0], txnName, stmt.Decs.Before))
+					newBody = append(newBody, addTxnToRequestContext(requestObject, txnName, &stmt.Decs.NodeDecs))
 					newBody = append(newBody, body[bodyIndex-1:]...)
-					stmt.Decs.Before = dst.None
-					return newBody, 0
+
+					return newBody, 1
 				}
 			}
 		}

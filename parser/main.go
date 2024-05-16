@@ -28,9 +28,8 @@ var (
 )
 
 type tracingData struct {
-	traced  bool
-	kind    sourceKind
-	varName string
+	traced bool
+	kind   sourceKind
 }
 
 type InstrumentationData struct {
