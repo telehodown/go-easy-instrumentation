@@ -7,6 +7,7 @@ import (
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/dstutil"
 )
 
 const (
@@ -143,26 +144,7 @@ func shutdownAgent(AgentVariableName string) *dst.ExprStmt {
 	}
 }
 
-/*
-func containsAgentImport(imports []*dst.ImportSpec) bool {
-	for _, imp := range imports {
-		if imp.Path.Value == agentImport {
-			return true
-		}
-	}
-	return false
-}
-
-func ImportAgent(fileset *token.FileSet, file *dst.File) string {
-	if !containsAgentImport(file.Imports) {
-		dstutil.AddImport(fileset, file, agentImport)
-		return ""
-	}
-	return ""
-}
-*/
-
-func InjectAgent(n dst.Node, data *InstrumentationData, parent ParentFunction) {
+func InjectAgent(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	if decl, ok := n.(*dst.FuncDecl); ok {
 		// only inject go agent into the main.main function
 		if data.pkg.Name == "main" && decl.Name.Name == "main" {
@@ -335,46 +317,38 @@ func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
 // with a newrelic transaction. All transactions are assumed to be named "txn"
-func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
-	errVar := findErrorVariable(stmt, pkg)
-	if errVar != "" {
-		newBody := []dst.Stmt{}
-		newBody = append(newBody, body[:bodyIndex+1]...)
-		newBody = append(newBody, txnNoticeError(errVar, txnName, stmt.Decorations()))
-		newBody = append(newBody, body[bodyIndex+1:]...)
-		return newBody, 1
-	}
-
-	return nil, 0
-}
-
-// TODO, rething this using a stack and using the cursor to simplify the logic
-// TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
-func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) ([]dst.Stmt, bool) {
-	instrumentedBody := body
-	addedInstrumentation := false
-	for i := 0; i < len(instrumentedBody); i++ {
-		stmt := instrumentedBody[i]
-		switch v := stmt.(type) {
-		case *dst.ForStmt:
-			TraceFunction(data, v.Body.List, txnName)
-		case *dst.GoStmt:
-			traceAsyncFunc(v)
-		case *dst.AssignStmt:
-			body, addedLines := NoticeError(v, data.pkg, instrumentedBody, i, txnName)
-			if body != nil {
-				instrumentedBody = body
-				addedInstrumentation = true
-				i += addedLines
-			}
-
-			body, addedLines = ExternalHttpCall(v, data.pkg, instrumentedBody, i, txnName)
-			if body != nil {
-				instrumentedBody = body
-				addedInstrumentation = true
-				i += addedLines
-			}
+func NoticeError(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+	switch nodeVal := stmt.(type) {
+	case *dst.AssignStmt:
+		errVar := findErrorVariable(nodeVal, data.pkg)
+		if errVar != "" {
+			c.InsertAfter(txnNoticeError(errVar, txnName, nodeVal.Decorations()))
+			return true
 		}
 	}
-	return instrumentedBody, addedInstrumentation
+	return false
+}
+
+type StmtFunction func(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool
+
+// TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
+func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnName string, tracingFuncs ...StmtFunction) (*dst.FuncDecl, bool) {
+	wasChanged := false
+	outputNode := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
+		n := c.Node()
+		switch v := n.(type) {
+		case *dst.GoStmt:
+			traceAsyncFunc(v)
+		case dst.Stmt:
+			for _, stmtFunc := range tracingFuncs {
+				ok := stmtFunc(data, v, c, txnName)
+				if ok {
+					wasChanged = true
+				}
+			}
+		}
+		return true
+	})
+
+	return outputNode.(*dst.FuncDecl), wasChanged
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/dstutil"
 )
 
 const (
@@ -31,8 +32,13 @@ const (
 	HttpClientType = `*net/http.Client`
 )
 
-// isNetHttpMethod checks if a call expression is a method from the net/http package
-func isNetHttpMethod(n *dst.CallExpr) (string, string, bool) {
+// returns (method name, client variable name)
+// TODO: check package info, not just node path
+func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
+	ident, ok := n.Fun.(*dst.Ident)
+	if ok && ident.Path == NetHttp {
+		return ident.Name, ""
+	}
 	sel, ok := n.Fun.(*dst.SelectorExpr)
 	if ok && sel.Sel.Name == HttpDo {
 		ident, ok := sel.X.(*dst.Ident)
@@ -76,16 +82,12 @@ func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, st
 	return "", ""
 }
 
-func InstrumentHandleFunc(n dst.Node, data *InstrumentationData, parent ParentFunction) {
+func InstrumentHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		funcName, _ := getHttpMethodAndClient(callExpr, data.pkg)
+
+		funcName, _ := getHttpMethodAndClient(callExpr)
 		if funcName == HttpHandleFunc && len(callExpr.Args) == 2 {
-			// Capture name of handle funcs for deeper instrumentation
-			handleFunc, ok := callExpr.Args[1].(*dst.Ident)
-			if ok {
-				data.AddTrace(handleFunc.Name, httpRespContext)
-			}
 
 			// Instrument handle funcs
 			oldArgs := callExpr.Args
@@ -112,8 +114,9 @@ func InstrumentHandleFunc(n dst.Node, data *InstrumentationData, parent ParentFu
 	}
 }
 
-func txnFromCtx(txnVariable string) *dst.AssignStmt {
-	return &dst.AssignStmt{
+func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
+	stmts := make([]dst.Stmt, len(fn.Body.List)+1)
+	stmts[0] = &dst.AssignStmt{
 		Decs: dst.AssignStmtDecorations{
 			NodeDecs: dst.NodeDecs{
 				After: dst.EmptyLine,
@@ -150,9 +153,13 @@ func txnFromCtx(txnVariable string) *dst.AssignStmt {
 			},
 		},
 	}
+	for i, stmt := range fn.Body.List {
+		stmts[i+1] = stmt
+	}
+	fn.Body.List = stmts
 }
 
-func isHttpHandler(params []*dst.Field, data *InstrumentationData) bool {
+func isHttpHandler(params []*dst.Field, data *InstrumentationManager) bool {
 	if len(params) == 2 {
 		var rw, req bool
 		for _, param := range params {
@@ -187,19 +194,16 @@ func isHttpHandler(params []*dst.Field, data *InstrumentationData) bool {
 	return false
 }
 
-// Optimistically guess if a function is a handler func based on its contents
-// Pre-instrumentation function
-func InstrumentHandler(n dst.Node, data *InstrumentationData, parent ParentFunction) {
-	ident, isIdent := n.(*dst.Ident)
-	if isIdent && ident.Obj != nil && ident.Obj.Decl != nil {
-		fn, isFn := ident.Obj.Decl.(*dst.FuncDecl)
-		if isFn && isHttpHandler(fn.Type.Params.List, data) {
-			txnName := newRelicTxnVariableName
-			body, ok := TraceFunction(data, fn.Body.List, txnName)
-			if ok {
-				body = append([]dst.Stmt{txnFromCtx(txnName)}, body...)
-				fn.Body.List = body
-			}
+// Recognize if a function is a handler func based on its contents, and inject instrumentation.
+func InstrumentHandler(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+	fn, isFn := n.(*dst.FuncDecl)
+	if isFn && isHttpHandler(fn.Type.Params.List, data) {
+		txnName := newRelicTxnVariableName
+		newFn, ok := TraceFunction(data, fn, txnName, httpStmtFuncs...)
+		if ok {
+			txnFromCtx(newFn, txnName)
+			c.Replace(newFn)
+			data.TraceFunctionDeclaration(newFn)
 		}
 	}
 }
@@ -237,7 +241,7 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 
 // InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
 // Returns modified function body, and number of lines added ahead of the current index
-func InstrumentHttpClient(n dst.Node, data *InstrumentationData, parent ParentFunction) {
+func InstrumentHttpClient(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	stmt, ok := n.(*dst.AssignStmt)
 	if ok && len(stmt.Lhs) == 1 {
 		clientVar := stmt.Lhs[0]
@@ -245,36 +249,47 @@ func InstrumentHttpClient(n dst.Node, data *InstrumentationData, parent ParentFu
 		expr, ok := astClientVar.(ast.Expr)
 		if ok && data.pkg.TypesInfo.TypeOf(expr).String() == HttpClientType {
 			// add new line that adds roundtripper to transport
-			if parent.cursor.Index() > 0 {
-				parent.cursor.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
+			if c.Index() > 0 {
+				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
 				stmt.Decs.After = dst.None
 			}
 		}
 	}
 }
 
-func cannotTraceOutboundHttp(method string) []string {
-	return []string{
+func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
+	comment := []string{
 		fmt.Sprintf("// the \"%s\" net/http method can not be instrumented and its outbound traffic can not be traced", method),
 		"// please see these examples of code patterns for external http calls that can be instrumented:",
 		"// https://docs.newrelic.com/docs/apm/agents/go-agent/configuration/distributed-tracing-go-agent/#make-http-requests",
-		"//",
 	}
+
+	if len(decs.Start.All()) > 0 {
+		comment = append(comment, "//")
+	}
+
+	return comment
 }
 
-func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationData, parent ParentFunction) {
-	var call *dst.CallExpr
-	stmt, ok := n.(*dst.AssignStmt)
+func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+	stmt, ok := n.(dst.Stmt)
 	if ok {
-		if len(stmt.Rhs) == 1 {
-			call, ok = stmt.Rhs[0].(*dst.CallExpr)
+		var call *dst.CallExpr
+		dst.Inspect(stmt, func(n dst.Node) bool {
+			c, ok := n.(*dst.CallExpr)
 			if ok {
-				funcName, _ := getHttpMethodAndClient(call, data.pkg)
-				if funcName != "" {
-					switch funcName {
-					case HttpGet, HttpPost, HttpPostForm, HttpHead:
-						n.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName)...)
-					}
+				call = c
+				return false
+			}
+			return true
+		})
+
+		if call != nil {
+			funcName, _ := getHttpMethodAndClient(call)
+			if funcName != "" {
+				switch funcName {
+				case HttpGet, HttpPost, HttpPostForm, HttpHead:
+					n.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, n.Decorations())...)
 				}
 			}
 		}
@@ -337,6 +352,8 @@ func endExternalSegment(segmentName string, nodeDecs *dst.NodeDecs) *dst.ExprStm
 	}
 }
 
+// adds a transaction to the HTTP request context object by creating a line of code that injects it
+// equal to calling: newrelic.RequestWithTransactionContext()
 func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
 	// Copy all decs above prior statement into this one
 	decs := dst.AssignStmtDecorations{
@@ -369,35 +386,34 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeD
 	}
 }
 
-// ExternalHttpCall finds and instruments external  net/http calls to the method http.Do.
+// ExternalHttpCall finds and instruments external net/http calls to the method http.Do.
 // It returns a modified function body, and the number of lines that were added.
-func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
-	if len(stmt.Rhs) == 1 {
-		call, ok := stmt.Rhs[0].(*dst.CallExpr)
-		if ok {
-			funcName, clientVar := getHttpMethodAndClient(call, pkg)
-			if funcName == HttpDo {
-				requestObject := call.Args[0]
-				if clientVar == HttpDefaultClientVariable {
-					// create external segment to wrap calls made with default client
-					segmentName := "externalSegment"
-					newBody := []dst.Stmt{}
-					newBody = append(newBody, body[:bodyIndex-1]...)
-					newBody = append(newBody, startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
-					newBody = append(newBody, body[bodyIndex-1])
-					newBody = append(newBody, endExternalSegment(segmentName, stmt.Decorations()))
-					newBody = append(newBody, body[bodyIndex:]...)
-					return newBody, 2
-				} else {
-					// add txn into request object
-					newBody := []dst.Stmt{}
-					newBody = append(newBody, body[:bodyIndex-1]...)
-					newBody = append(newBody, addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
-					newBody = append(newBody, body[bodyIndex-1:]...)
-					return newBody, 1
-				}
+func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+	var call *dst.CallExpr
+	dst.Inspect(stmt, func(n dst.Node) bool {
+		if c, isCall := n.(*dst.CallExpr); isCall {
+			call = c
+		}
+		return true
+	})
+
+	if call != nil {
+		funcName, clientVar := getHttpMethodAndClient(call)
+		if funcName == HttpDo {
+			requestObject := call.Args[0]
+			if clientVar == HttpDefaultClientVariable {
+				// create external segment to wrap calls made with default client
+				segmentName := "externalSegment"
+				c.InsertBefore(startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
+				c.InsertAfter(endExternalSegment(segmentName, stmt.Decorations()))
+				return true
+			} else {
+				c.InsertAfter(addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
+				return true
 			}
 		}
 	}
-	return nil, 0
+	return false
 }
+
+var httpStmtFuncs = []StmtFunction{NoticeError, ExternalHttpCall}
