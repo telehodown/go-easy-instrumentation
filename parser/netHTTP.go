@@ -457,7 +457,8 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 	return false
 }
 
-// InstrumentHandlerDeclaration is a function that wraps
+// InstrumentHandlerDeclaration is a function that wraps *net/http.HandeFunc() declarations inside of functions
+// that are being traced by a transaction.
 func InstrumentHandlerDeclaration(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
 	var callExpr *dst.CallExpr
 	wasModified := false

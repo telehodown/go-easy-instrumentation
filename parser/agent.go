@@ -402,8 +402,9 @@ type TracingFunction func(data *InstrumentationManager, stmt dst.Stmt, c *dstuti
 var tracingFuncs = []TracingFunction{ExternalHttpCall, InstrumentHandlerDeclaration, NoticeError}
 
 // TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
+// Traces all called functions inside the current package as well.
 func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName string) (*dst.FuncDecl, bool) {
-	wasChanged := false
+	TopLevelFunctionChanged := false
 	outputNode := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
 		n := c.Node()
 		switch v := n.(type) {
@@ -413,10 +414,9 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 			fnName, call := data.GetPackageFunctionInvocation(v)
 			if data.ShouldInstrumentFunction(fnName) {
 				decl := data.GetDeclaration(fnName)
-				modifiedDecl, wasModified := TraceFunction(data, decl, txnVarName)
+				_, wasModified := TraceFunction(data, decl, txnVarName)
 				if wasModified {
-					wasChanged = true
-					data.TraceFunctionDeclaration(modifiedDecl)
+					TopLevelFunctionChanged = true
 					call.Args = append(call.Args, dst.NewIdent(txnVarName))
 					addTxnToArguments(decl, txnVarName)
 				}
@@ -424,7 +424,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 			for _, stmtFunc := range tracingFuncs {
 				ok := stmtFunc(data, v, c, txnVarName)
 				if ok {
-					wasChanged = true
+					TopLevelFunctionChanged = true
 				}
 			}
 		}
@@ -434,5 +434,5 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 	// update the stored declaration, marking it as traced
 	decl := outputNode.(*dst.FuncDecl)
 	data.TraceFunctionDeclaration(decl)
-	return decl, wasChanged
+	return decl, TopLevelFunctionChanged
 }
