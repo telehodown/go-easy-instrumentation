@@ -15,6 +15,7 @@ const (
 
 	// Methods that can be instrumented
 	HttpHandleFunc = "HandleFunc"
+	HttpMuxHandle  = "Handle"
 	HttpNewRequest = "NewRequest"
 	HttpDo         = "Do"
 
@@ -87,30 +88,33 @@ func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
 		funcName, _ := getHttpMethodAndClient(callExpr)
-		if funcName == HttpHandleFunc && len(callExpr.Args) == 2 {
-
-			// Instrument handle funcs
-			oldArgs := callExpr.Args
-			callExpr.Args = []dst.Expr{
-				&dst.CallExpr{
-					Fun: &dst.SelectorExpr{
-						X: &dst.Ident{
-							Name: "newrelic",
+		switch funcName {
+		case HttpHandleFunc, HttpMuxHandle:
+			if len(callExpr.Args) == 2 {
+				// Instrument handle funcs
+				oldArgs := callExpr.Args
+				callExpr.Args = []dst.Expr{
+					&dst.CallExpr{
+						Fun: &dst.SelectorExpr{
+							X: &dst.Ident{
+								Name: "newrelic",
+							},
+							Sel: &dst.Ident{
+								Name: "WrapHandleFunc",
+							},
 						},
-						Sel: &dst.Ident{
-							Name: "WrapHandleFunc",
+						Args: []dst.Expr{
+							&dst.Ident{
+								Name: data.agentVariableName,
+							},
+							oldArgs[0],
+							oldArgs[1],
 						},
 					},
-					Args: []dst.Expr{
-						&dst.Ident{
-							Name: data.agentVariableName,
-						},
-						oldArgs[0],
-						oldArgs[1],
-					},
-				},
+				}
 			}
 		}
+
 	}
 }
 
@@ -457,9 +461,9 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 	return false
 }
 
-// InstrumentHandlerDeclaration is a function that wraps *net/http.HandeFunc() declarations inside of functions
+// WrapHandleFunction is a function that wraps *net/http.HandeFunc() declarations inside of functions
 // that are being traced by a transaction.
-func InstrumentHandlerDeclaration(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
 	var callExpr *dst.CallExpr
 	wasModified := false
 	dst.Inspect(stmt, func(n dst.Node) bool {
@@ -468,33 +472,36 @@ func InstrumentHandlerDeclaration(data *InstrumentationManager, stmt dst.Stmt, c
 			callExpr = v
 			if callExpr != nil {
 				funcName, _ := getHttpMethodAndClient(callExpr)
-				if funcName == HttpHandleFunc && len(callExpr.Args) == 2 {
-					// Instrument handle funcs
-					oldArgs := callExpr.Args
-					callExpr.Args = []dst.Expr{
-						&dst.CallExpr{
-							Fun: &dst.SelectorExpr{
-								X: &dst.Ident{
-									Name: "newrelic",
-								},
-								Sel: &dst.Ident{
-									Name: "WrapHandleFunc",
-								},
-							},
-							Args: []dst.Expr{
-								&dst.CallExpr{
-									Fun: &dst.SelectorExpr{
-										X:   dst.NewIdent(txnName),
-										Sel: dst.NewIdent("Application"),
+				switch funcName {
+				case HttpHandleFunc, HttpMuxHandle:
+					if len(callExpr.Args) == 2 {
+						// Instrument handle funcs
+						oldArgs := callExpr.Args
+						callExpr.Args = []dst.Expr{
+							&dst.CallExpr{
+								Fun: &dst.SelectorExpr{
+									X: &dst.Ident{
+										Name: "newrelic",
+									},
+									Sel: &dst.Ident{
+										Name: "WrapHandleFunc",
 									},
 								},
-								oldArgs[0],
-								oldArgs[1],
+								Args: []dst.Expr{
+									&dst.CallExpr{
+										Fun: &dst.SelectorExpr{
+											X:   dst.NewIdent(txnName),
+											Sel: dst.NewIdent("Application"),
+										},
+									},
+									oldArgs[0],
+									oldArgs[1],
+								},
 							},
-						},
+						}
+						wasModified = true
+						return false
 					}
-					wasModified = true
-					return false
 				}
 			}
 		}

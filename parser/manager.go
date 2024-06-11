@@ -66,6 +66,8 @@ func (d *InstrumentationManager) TraceFunctionDeclaration(decl *dst.FuncDecl) {
 	}
 }
 
+// GetPackageFunctionInvocation returns the name of the function being invoked, and the expression containing the call
+// where that invocation occurs if a function is declared in this package.
 func (d *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (string, *dst.CallExpr) {
 	fnName := ""
 	var pkgCall *dst.CallExpr
@@ -80,18 +82,22 @@ func (d *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 				case *ast.SelectorExpr:
 					pkgID := astNodeType.X.(*ast.Ident)
 					callPackage := d.pkg.TypesInfo.Uses[pkgID]
-					if callPackage.(*types.PkgName).Imported().Path() == d.pkg.PkgPath {
-						fnName = astNodeType.Sel.Name
-						pkgCall = call
-						return false
+					if callPackage != nil && callPackage.Type().String() != "invalid type" {
+						if callPackage.(*types.PkgName).Imported().Path() == d.pkg.PkgPath {
+							fnName = astNodeType.Sel.Name
+							pkgCall = call
+							return false
+						}
 					}
 				case *ast.Ident:
 					pkgID := astNodeType
 					callPackage := d.pkg.TypesInfo.Uses[pkgID]
-					if callPackage.Pkg().Path() == d.pkg.PkgPath {
-						fnName = pkgID.Name
-						pkgCall = call
-						return false
+					if callPackage != nil && callPackage.Type().String() != "invalid type" {
+						if callPackage.Pkg().Path() == d.pkg.PkgPath {
+							fnName = pkgID.Name
+							pkgCall = call
+							return false
+						}
 					}
 				}
 			}

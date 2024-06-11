@@ -396,7 +396,7 @@ func traceAsyncFunc(stmt *dst.GoStmt) {
 
 type TracingFunction func(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
 
-var tracingFuncs = []TracingFunction{ExternalHttpCall, InstrumentHandlerDeclaration, NoticeError}
+var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
 
 // TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
 // Traces all called functions inside the current package as well.
