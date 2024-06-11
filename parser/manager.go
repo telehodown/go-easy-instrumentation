@@ -6,7 +6,6 @@ import (
 	"go/types"
 	"log"
 	"os"
-	"strconv"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -23,8 +22,9 @@ const (
 //
 // Please access this object's data through methods rather than directly manipulating it.
 type tracedFunction struct {
-	traced bool
-	body   *dst.FuncDecl
+	traced      bool
+	requiresTxn bool
+	body        *dst.FuncDecl
 }
 
 // InstrumentationManager maintains state relevant to tracing across all files and functions within a package.
@@ -47,27 +47,6 @@ func NewInstrumentationManager(pkg *decorator.Package, appName, agentVariableNam
 		tracedFuncs:       map[string]*tracedFunction{},
 		txnVariableNames:  map[string]int{},
 	}
-}
-
-// GenerateTransactionVariableName ensures that no illegal naming occurs and generates a unique variable name
-func (d *InstrumentationManager) GenerateTransactionVariableName(names ...string) string {
-	variableName := defaultTxnName
-	if len(names) > 0 {
-		for i, name := range names {
-			if i == len(names)-1 {
-				variableName = variableName + name
-			} else {
-				variableName = variableName + name + "_"
-			}
-		}
-	}
-
-	count := d.txnVariableNames[variableName]
-	if count > 0 {
-		variableName = variableName + strconv.Itoa(count)
-	}
-	d.txnVariableNames[variableName] = count + 1
-	return variableName
 }
 
 // TraceFunction creates a tracking object for a function declaration that can be used
@@ -124,10 +103,22 @@ func (d *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 	return fnName, pkgCall
 }
 
-// MarkTracingComplete identifies a function as being fully traced, preventing duplication of work.
-func (d *InstrumentationManager) MarkTracingCompleted(functionName string) {
-	data := d.tracedFuncs[functionName]
-	data.traced = true
+// AddTxnArgumentToFuncDecl adds a transaction argument to the declaration of a function. This marks that function as needing a transaction,
+// and can be looked up by name to know that the last argument is a transaction.
+func (d *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl, txnVarName, functionName string) {
+	decl.Type.Params.List = append(decl.Type.Params.List, &dst.Field{
+		Names: []*dst.Ident{dst.NewIdent(txnVarName)},
+		Type: &dst.StarExpr{
+			X: &dst.SelectorExpr{
+				X:   dst.NewIdent("newrelic"),
+				Sel: dst.NewIdent("Transaction"),
+			},
+		},
+	})
+	data, ok := d.tracedFuncs[functionName]
+	if ok {
+		data.requiresTxn = true
+	}
 }
 
 // IsTracingComplete returns true if a function has all the tracing it needs added to it.
@@ -139,7 +130,19 @@ func (d *InstrumentationManager) ShouldInstrumentFunction(functionName string) b
 	if ok {
 		return !v.traced
 	}
+	return false
+}
 
+// RequiresTransactionArgument returns true if a modified function needs a transaction as an argument.
+// This can be used to check if transactions should be passed by callers.
+func (d *InstrumentationManager) RequiresTransactionArgument(functionName string) bool {
+	if functionName == "" {
+		return false
+	}
+	v, ok := d.tracedFuncs[functionName]
+	if ok {
+		return v.requiresTxn
+	}
 	return false
 }
 

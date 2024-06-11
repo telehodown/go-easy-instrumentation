@@ -141,7 +141,11 @@ func shutdownAgent(AgentVariableName string) *dst.ExprStmt {
 	}
 }
 
-func startTransaction(appVariableName, transactionVariableName, transactionName string) *dst.AssignStmt {
+func startTransaction(appVariableName, transactionVariableName, transactionName string, overwriteVariable bool) *dst.AssignStmt {
+	tok := token.DEFINE
+	if overwriteVariable {
+		tok = token.ASSIGN
+	}
 	return &dst.AssignStmt{
 		Lhs: []dst.Expr{dst.NewIdent(transactionVariableName)},
 		Rhs: []dst.Expr{
@@ -158,7 +162,7 @@ func startTransaction(appVariableName, transactionVariableName, transactionName 
 				},
 			},
 		},
-		Tok: token.DEFINE,
+		Tok: tok,
 	}
 }
 
@@ -173,20 +177,9 @@ func endTransaction(transactionVariableName string) *dst.ExprStmt {
 	}
 }
 
-func addTxnToArguments(decl *dst.FuncDecl, txnVarName string) {
-	decl.Type.Params.List = append(decl.Type.Params.List, &dst.Field{
-		Names: []*dst.Ident{dst.NewIdent(txnVarName)},
-		Type: &dst.StarExpr{
-			X: &dst.SelectorExpr{
-				X:   dst.NewIdent("newrelic"),
-				Sel: dst.NewIdent("Transaction"),
-			},
-		},
-	})
-}
-
 // InstrumentMain looks for the main method of a program, and uses this as an instrumentation initialization and injection point
 func InstrumentMain(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+	txnStarted := false
 	if decl, ok := n.(*dst.FuncDecl); ok {
 		// only inject go agent into the main.main function
 		if decl.Name.Name == "main" {
@@ -199,18 +192,22 @@ func InstrumentMain(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 				switch v := node.(type) {
 				case *dst.ExprStmt:
 					fnName, call := data.GetPackageFunctionInvocation(v)
+					// check if the called function has been instrumented already, if not, instrument it.
 					if data.ShouldInstrumentFunction(fnName) {
-						txnVarName := data.GenerateTransactionVariableName("")
-						c.InsertBefore(startTransaction(data.agentVariableName, txnVarName, fnName))
 						decl := data.GetDeclaration(fnName)
-						_, wasModified := TraceFunction(data, decl, txnVarName)
+						_, wasModified := TraceFunction(data, decl, defaultTxnName)
 						if wasModified {
-							// add transaction to declaration and invocation arguments
-							call.Args = append(call.Args, dst.NewIdent(txnVarName))
-							addTxnToArguments(decl, txnVarName)
+							// add transaction to declaration arguments
+							data.AddTxnArgumentToFunctionDecl(decl, defaultTxnName, fnName)
 						}
+					}
+					// pass the called function a transaction if needed
+					if data.RequiresTransactionArgument(fnName) {
+						txnVarName := defaultTxnName
+						c.InsertBefore(startTransaction(data.agentVariableName, txnVarName, fnName, txnStarted))
 						c.InsertAfter(endTransaction(txnVarName))
-
+						call.Args = append(call.Args, dst.NewIdent(defaultTxnName))
+						txnStarted = true
 					}
 					WrapHandleFunc(n, data, c)
 				}
@@ -417,9 +414,11 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				_, wasModified := TraceFunction(data, decl, txnVarName)
 				if wasModified {
 					TopLevelFunctionChanged = true
-					call.Args = append(call.Args, dst.NewIdent(txnVarName))
-					addTxnToArguments(decl, txnVarName)
+					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
 				}
+			}
+			if data.RequiresTransactionArgument(fnName) {
+				call.Args = append(call.Args, dst.NewIdent(txnVarName))
 			}
 			for _, stmtFunc := range tracingFuncs {
 				ok := stmtFunc(data, v, c, txnVarName)
