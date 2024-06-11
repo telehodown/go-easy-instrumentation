@@ -12,10 +12,6 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-var (
-	newRelicTxnVariableName = "nrTxn"
-)
-
 type InstrumentationFunc func(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 
 func instrumentPackage(data *InstrumentationManager, instrumentationFunctions ...InstrumentationFunc) {
@@ -42,9 +38,6 @@ func tracePackageFunctionCalls(data *InstrumentationManager) {
 		for _, decl := range file.Decls {
 			if fn, isFn := decl.(*dst.FuncDecl); isFn {
 				data.TraceFunctionDeclaration(fn)
-				for _, stmt := range fn.Body.List {
-					data.TraceFuncionCall(stmt, fn.Name.Name)
-				}
 			}
 		}
 	}
@@ -60,7 +53,7 @@ func InstrumentPackage(pkg *decorator.Package, appName, agentVariableName, diffF
 	// 	- import the agent
 	//	- initialize the agent
 	//	- shutdown the agent
-	instrumentPackage(data, InjectAgent, InstrumentHandleFunc, InstrumentHandler, InstrumentHttpClient, CannotInstrumentHttpMethod)
+	instrumentPackage(data, InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
 
 	data.WriteDiff()
 }
