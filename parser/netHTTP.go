@@ -32,15 +32,15 @@ const (
 )
 
 // isNetHttpMethod checks if a call expression is a method from the net/http package
-func isNetHttpMethod(n *dst.CallExpr) (string, bool) {
+func isNetHttpMethod(n *dst.CallExpr) (string, string, bool) {
 	sel, ok := n.Fun.(*dst.SelectorExpr)
-	if ok {
+	if ok && sel.Sel.Name == HttpDo {
 		ident, ok := sel.X.(*dst.Ident)
-		if ok && ident.Path == NetHttp {
-			return sel.Sel.Name, true
+		if ok && ident.Path == NetHttp && ident.Name == HttpDefaultClient {
+			return sel.Sel.Name, HttpDefaultClientVariable, true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // Similar to isNetHttpMethod but for AST nodes
@@ -68,9 +68,9 @@ func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, st
 			return method, ""
 		}
 	}
-	method, ok := isNetHttpMethod(n)
+	method, client, ok := isNetHttpMethod(n)
 	if ok {
-		return method, ""
+		return method, client
 	}
 
 	return "", ""
