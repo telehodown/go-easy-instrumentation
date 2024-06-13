@@ -26,63 +26,90 @@ const (
 	HttpPostForm = "PostForm"
 
 	// default net/http client variable
-	HttpDefaultClientVariable = "http.DefaultClient"
+	HttpDefaultClientVariable = "DefaultClient"
 	// default net/http client identifier
 	HttpDefaultClient = "DefaultClient"
 	// http client type
 	HttpClientType = `*net/http.Client`
+	HttpPath       = `net/http`
 )
 
-// isNetHttpMethod checks if a call expression is a method from the net/http package
-func isNetHttpMethod(n *dst.CallExpr) (string, string, bool) {
-	sel, ok := n.Fun.(*dst.SelectorExpr)
-	if ok && sel.Sel.Name == HttpDo {
-		ident, ok := sel.X.(*dst.Ident)
-		if ok && ident.Path == NetHttp && ident.Name == HttpDefaultClient {
-			return sel.Sel.Name, HttpDefaultClientVariable, true
+func typeOfIdent(ident *dst.Ident, pkg *decorator.Package) string {
+	if ident == nil {
+		return ""
+	}
+	astNode := pkg.Decorator.Ast.Nodes[ident]
+	var astIdent *ast.Ident
+	switch v := astNode.(type) {
+	case *ast.SelectorExpr:
+		astIdent = v.Sel
+	case *ast.Ident:
+		astIdent = v
+	default:
+		return ""
+	}
+
+	uses, ok := pkg.TypesInfo.Uses[astIdent]
+	if ok {
+		if uses.Pkg() != nil {
+			return uses.Pkg().Path()
 		}
 	}
-	return "", "", false
+	return ""
 }
 
-// Similar to isNetHttpMethod but for AST nodes
-func isNetHttpMethodAST(n *ast.CallExpr) (string, bool) {
-	funName, ok := n.Fun.(*ast.SelectorExpr).X.(*ast.Ident)
+// GetNetHttpClientVariableName looks for an http client in the call expression n. If it finds one, the name
+// of the variable containing the client will be returned as a string.
+func GetNetHttpClientVariableName(n *dst.CallExpr, pkg *decorator.Package) string {
+	if n == nil {
+		return ""
+	}
+
+	Sel, ok := n.Fun.(*dst.SelectorExpr)
 	if ok {
-		if funName.Name == "http" {
-			method, ok := n.Fun.(*ast.SelectorExpr)
-			if ok {
-				return method.Sel.Name, true
+		switch v := Sel.X.(type) {
+		case *dst.SelectorExpr:
+			path := typeOfIdent(v.Sel, pkg)
+			if path == HttpPath {
+				return v.Sel.Name
+			}
+		case *dst.Ident:
+			path := typeOfIdent(v, pkg)
+			if path == HttpPath {
+				return v.Name
 			}
 		}
 	}
-	return "", false
-
+	return ""
 }
 
-// returns (method name, client variable name)
-func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, string) {
-	// check decorator package for the path of the ident
-	astIdent, ok := pkg.Decorator.Ast.Nodes[n].(*ast.CallExpr)
-	if ok {
-		method, ok := isNetHttpMethodAST(astIdent)
-		if ok {
-			return method, ""
-		}
-	}
-	method, client, ok := isNetHttpMethod(n)
-	if ok {
-		return method, client
+// GetNetHttpMethod gets an http method if one is invoked in the call expression n, and returns the name of it as a string
+func GetNetHttpMethod(n *dst.CallExpr, pkg *decorator.Package) string {
+	if n == nil {
+		return ""
 	}
 
-	return "", ""
+	switch v := n.Fun.(type) {
+	case *dst.SelectorExpr:
+		path := typeOfIdent(v.Sel, pkg)
+		if path == HttpPath {
+			return v.Sel.Name
+		}
+	case *dst.Ident:
+		path := typeOfIdent(v, pkg)
+		if path == HttpPath {
+			return v.Name
+		}
+	}
+
+	return ""
 }
 
 // WrapHandleFunc looks for an instance of http.HandleFunc() and wraps it with a new relic transaction
 func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		funcName, _ := getHttpMethodAndClient(callExpr, data.pkg)
+		funcName := GetNetHttpMethod(callExpr, data.pkg)
 		switch funcName {
 		case HttpHandleFunc, HttpMuxHandle:
 			if len(callExpr.Args) == 2 {
@@ -247,9 +274,10 @@ func InstrumentHttpClient(n dst.Node, data *InstrumentationManager, c *dstutil.C
 		clientVar := stmt.Lhs[0]
 		astClientVar := data.pkg.Decorator.Ast.Nodes[clientVar]
 		expr, ok := astClientVar.(ast.Expr)
-		if ok && data.pkg.TypesInfo.TypeOf(expr).String() == HttpClientType {
-			// add new line that adds roundtripper to transport
-			if c.Index() > 0 {
+		if ok {
+			t := data.pkg.TypesInfo.TypeOf(expr).String()
+			if t == HttpClientType {
+				// add new line that adds roundtripper to transports
 				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
 				stmt.Decs.After = dst.None
 			}
@@ -274,27 +302,20 @@ func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 // CannotInstrumentHttpMethod is a function that discovers methods of net/http. If that function can not be penetrated by
 // instrumentation, it leaves a comment header warning the customer. This function needs no tracing context to work.
 func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
-	stmt, ok := n.(dst.Stmt)
-	if ok {
-		var call *dst.CallExpr
-		dst.Inspect(stmt, func(n dst.Node) bool {
+	switch v := n.(type) {
+	case *dst.AssignStmt, *dst.ExprStmt:
+		dst.Inspect(n, func(n dst.Node) bool {
 			c, ok := n.(*dst.CallExpr)
 			if ok {
-				call = c
+				funcName := GetNetHttpMethod(c, data.pkg)
+				switch funcName {
+				case HttpGet, HttpPost, HttpPostForm, HttpHead:
+					v.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, v.Decorations())...)
+				}
 				return false
 			}
 			return true
 		})
-
-		if call != nil {
-			funcName, _ := getHttpMethodAndClient(call, data.pkg)
-			if funcName != "" {
-				switch funcName {
-				case HttpGet, HttpPost, HttpPostForm, HttpHead:
-					n.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, n.Decorations())...)
-				}
-			}
-		}
 	}
 }
 
@@ -425,78 +446,79 @@ func getHttpResponseExpr(data *InstrumentationManager, stmt dst.Stmt) dst.Expr {
 // ExternalHttpCall finds and instruments external net/http calls to the method http.Do.
 // It returns a modified function body, and the number of lines that were added.
 func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+	if c.Index() < 0 {
+		return false
+	}
 	var call *dst.CallExpr
 	dst.Inspect(stmt, func(n dst.Node) bool {
-		if c, isCall := n.(*dst.CallExpr); isCall {
-			call = c
+		switch v := n.(type) {
+		case *dst.CallExpr:
+			if GetNetHttpMethod(v, data.pkg) == HttpDo {
+				call = v
+				return false
+			}
 		}
 		return true
 	})
-
 	if call != nil {
-		funcName, clientVar := getHttpMethodAndClient(call, data.pkg)
-		if funcName == HttpDo {
-			requestObject := call.Args[0]
-			if clientVar == HttpDefaultClientVariable {
-				// create external segment to wrap calls made with default client
-				segmentName := "externalSegment"
-				c.InsertBefore(startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
-				c.InsertAfter(endExternalSegment(segmentName, stmt.Decorations()))
-				responseVar := getHttpResponseExpr(data, stmt)
-				if responseVar != nil {
-					c.InsertAfter(captureHttpResponse(segmentName, responseVar))
-				}
-				return true
-			} else {
-				c.InsertBefore(addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
-				return true
+		clientVar := GetNetHttpClientVariableName(call, data.pkg)
+		requestObject := call.Args[0]
+		if clientVar == HttpDefaultClientVariable {
+			// create external segment to wrap calls made with default client
+			segmentName := "externalSegment"
+			c.InsertBefore(startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
+			c.InsertAfter(endExternalSegment(segmentName, stmt.Decorations()))
+			responseVar := getHttpResponseExpr(data, stmt)
+			if responseVar != nil {
+				c.InsertAfter(captureHttpResponse(segmentName, responseVar))
 			}
+			return true
+		} else {
+			c.InsertBefore(addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
+			return true
 		}
 	}
 	return false
 }
 
-// WrapHandleFunction is a function that wraps *net/http.HandeFunc() declarations inside of functions
+// WrapHandleFunction is a function that wraps net/http.HandeFunc() declarations inside of functions
 // that are being traced by a transaction.
 func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
-	var callExpr *dst.CallExpr
 	wasModified := false
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.CallExpr:
-			callExpr = v
-			if callExpr != nil {
-				funcName, _ := getHttpMethodAndClient(callExpr, data.pkg)
-				switch funcName {
-				case HttpHandleFunc, HttpMuxHandle:
-					if len(callExpr.Args) == 2 {
-						// Instrument handle funcs
-						oldArgs := callExpr.Args
-						callExpr.Args = []dst.Expr{
-							&dst.CallExpr{
-								Fun: &dst.SelectorExpr{
-									X: &dst.Ident{
-										Name: "newrelic",
-									},
-									Sel: &dst.Ident{
-										Name: "WrapHandleFunc",
-									},
+			callExpr := v
+			funcName := GetNetHttpMethod(callExpr, data.pkg)
+			switch funcName {
+			case HttpHandleFunc, HttpMuxHandle:
+				if len(callExpr.Args) == 2 {
+					// Instrument handle funcs
+					oldArgs := callExpr.Args
+					callExpr.Args = []dst.Expr{
+						&dst.CallExpr{
+							Fun: &dst.SelectorExpr{
+								X: &dst.Ident{
+									Name: "newrelic",
 								},
-								Args: []dst.Expr{
-									&dst.CallExpr{
-										Fun: &dst.SelectorExpr{
-											X:   dst.NewIdent(txnName),
-											Sel: dst.NewIdent("Application"),
-										},
-									},
-									oldArgs[0],
-									oldArgs[1],
+								Sel: &dst.Ident{
+									Name: "WrapHandleFunc",
 								},
 							},
-						}
-						wasModified = true
-						return false
+							Args: []dst.Expr{
+								&dst.CallExpr{
+									Fun: &dst.SelectorExpr{
+										X:   dst.NewIdent(txnName),
+										Sel: dst.NewIdent("Application"),
+									},
+								},
+								oldArgs[0],
+								oldArgs[1],
+							},
+						},
 					}
+					wasModified = true
+					return false
 				}
 			}
 		}
