@@ -33,24 +33,6 @@ const (
 	HttpClientType = `*net/http.Client`
 )
 
-// returns (method name, client variable name)
-func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, string) {
-	// check decorator package for the path of the ident
-	astIdent, ok := pkg.Decorator.Ast.Nodes[n].(*ast.CallExpr)
-	if ok {
-		method, ok := isNetHttpMethodAST(astIdent)
-		if ok {
-			return method, ""
-		}
-	}
-	method, client, ok := isNetHttpMethod(n)
-	if ok {
-		return method, client
-	}
-
-	return "", ""
-}
-
 // isNetHttpMethod checks if a call expression is a method from the net/http package
 func isNetHttpMethod(n *dst.CallExpr) (string, string, bool) {
 	sel, ok := n.Fun.(*dst.SelectorExpr)
@@ -76,6 +58,24 @@ func isNetHttpMethodAST(n *ast.CallExpr) (string, bool) {
 	}
 	return "", false
 
+}
+
+// returns (method name, client variable name)
+func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, string) {
+	// check decorator package for the path of the ident
+	astIdent, ok := pkg.Decorator.Ast.Nodes[n].(*ast.CallExpr)
+	if ok {
+		method, ok := isNetHttpMethodAST(astIdent)
+		if ok {
+			return method, ""
+		}
+	}
+	method, client, ok := isNetHttpMethod(n)
+	if ok {
+		return method, client
+	}
+
+	return "", ""
 }
 
 // WrapHandleFunc looks for an instance of http.HandleFunc() and wraps it with a new relic transaction
