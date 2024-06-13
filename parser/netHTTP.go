@@ -136,7 +136,6 @@ func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 				}
 			}
 		}
-
 	}
 }
 

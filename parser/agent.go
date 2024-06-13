@@ -178,9 +178,9 @@ func endTransaction(transactionVariableName string) *dst.ExprStmt {
 }
 
 // InstrumentMain looks for the main method of a program, and uses this as an instrumentation initialization and injection point
-func InstrumentMain(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+func InstrumentMain(mainFunctionNode dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	txnStarted := false
-	if decl, ok := n.(*dst.FuncDecl); ok {
+	if decl, ok := mainFunctionNode.(*dst.FuncDecl); ok {
 		// only inject go agent into the main.main function
 		if decl.Name.Name == "main" {
 			agentDecl := createAgentAST(data.appName, data.agentVariableName)
@@ -209,7 +209,7 @@ func InstrumentMain(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 						call.Args = append(call.Args, dst.NewIdent(defaultTxnName))
 						txnStarted = true
 					}
-					WrapHandleFunc(n, data, c)
+					WrapHandleFunc(v.X, data, c)
 				}
 
 				return true
