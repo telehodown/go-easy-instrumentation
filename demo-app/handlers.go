@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -77,4 +78,32 @@ func roundtripper(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 	io.Copy(w, resp.Body)
+}
+
+func async(w http.ResponseWriter, r *http.Request) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	wg.Wait()
+	w.Write([]byte("done!"))
+}
+
+func doAsyncThing(wg *sync.WaitGroup) {
+	defer wg.Done()
+	time.Sleep(100 * time.Millisecond)
+	_, err := http.Get("http://example.com")
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func async2(w http.ResponseWriter, r *http.Request) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go doAsyncThing(wg)
+	wg.Wait()
+	w.Write([]byte("done!"))
 }

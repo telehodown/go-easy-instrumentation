@@ -11,6 +11,8 @@ func initHandlers() {
 	http.HandleFunc("/external", external)
 	http.HandleFunc("/roundtrip", roundtripper)
 	http.HandleFunc("/basicExternal", basicExternal)
+	http.HandleFunc("/async", async)
+	http.HandleFunc("/async2", async2)
 }
 
 func main() {

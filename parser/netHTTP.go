@@ -209,7 +209,7 @@ func InstrumentHandleFunction(n dst.Node, data *InstrumentationManager, c *dstut
 		if ok {
 			txnFromCtx(newFn, txnName)
 			c.Replace(newFn)
-			data.TraceFunctionDeclaration(newFn)
+			data.UpdateFunctionDeclaration(newFn)
 		}
 	}
 }

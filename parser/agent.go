@@ -240,15 +240,13 @@ func txnAsParameter() *dst.Field {
 	}
 }
 
-func deferAsyncSegment() *dst.DeferStmt {
+func deferAsyncSegment(txnVarName string) *dst.DeferStmt {
 	return &dst.DeferStmt{
 		Call: &dst.CallExpr{
 			Fun: &dst.SelectorExpr{
 				X: &dst.CallExpr{
 					Fun: &dst.SelectorExpr{
-						X: &dst.Ident{
-							Name: "txn",
-						},
+						X: dst.NewIdent(txnVarName),
 						Sel: &dst.Ident{
 							Name: "StartSegment",
 						},
@@ -366,6 +364,10 @@ func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
 	return ""
 }
 
+type TracingFunction func(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
+
+var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
+
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
 // with a newrelic transaction. All transactions are assumed to be named "txn"
@@ -381,23 +383,6 @@ func NoticeError(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor,
 	return false
 }
 
-// dfs search for async func block and injection of telemetry
-func traceAsyncFunc(stmt *dst.GoStmt) {
-	// Go function literal
-	if fun, ok := stmt.Call.Fun.(*dst.FuncLit); ok {
-		// Add threaded txn to function arguments and parameters
-		fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter())
-		stmt.Call.Args = append(stmt.Call.Args, txnNewGoroutine())
-
-		// create async segment
-		fun.Body.List = append([]dst.Stmt{deferAsyncSegment()}, fun.Body.List...)
-	}
-}
-
-type TracingFunction func(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
-
-var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
-
 // TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
 // Traces all called functions inside the current package as well.
 // This function returns a FuncDecl object pointer that contains the potentially modified version of the FuncDecl object, fn, passed. If
@@ -408,7 +393,29 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 		n := c.Node()
 		switch v := n.(type) {
 		case *dst.GoStmt:
-			traceAsyncFunc(v)
+			switch fun := v.Call.Fun.(type) {
+			case *dst.FuncLit:
+				// Add threaded txn to function arguments and parameters
+				fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter())
+				v.Call.Args = append(v.Call.Args, txnNewGoroutine())
+				// create async segment
+				fun.Body.List = append([]dst.Stmt{deferAsyncSegment(txnVarName)}, fun.Body.List...)
+				c.Replace(v)
+				TopLevelFunctionChanged = true
+			default:
+				fnName, call := data.GetPackageFunctionInvocation(v.Call)
+				if data.ShouldInstrumentFunction(fnName) {
+					decl := data.GetDeclaration(fnName)
+					TraceFunction(data, decl, txnVarName)
+					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
+					decl.Body.List = append([]dst.Stmt{deferAsyncSegment(txnVarName)}, decl.Body.List...)
+				}
+				if data.RequiresTransactionArgument(fnName) {
+					call.Args = append(call.Args, dst.NewIdent(txnVarName))
+					c.Replace(v)
+					TopLevelFunctionChanged = true
+				}
+			}
 		case dst.Stmt:
 			fnName, call := data.GetPackageFunctionInvocation(v)
 			if data.ShouldInstrumentFunction(fnName) {
@@ -434,6 +441,6 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 
 	// update the stored declaration, marking it as traced
 	decl := outputNode.(*dst.FuncDecl)
-	data.TraceFunctionDeclaration(decl)
+	data.UpdateFunctionDeclaration(decl)
 	return decl, TopLevelFunctionChanged
 }

@@ -37,7 +37,7 @@ func tracePackageFunctionCalls(data *InstrumentationManager) {
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			if fn, isFn := decl.(*dst.FuncDecl); isFn {
-				data.TraceFunctionDeclaration(fn)
+				data.CreateFunctionDeclaration(fn)
 			}
 		}
 	}

@@ -49,20 +49,23 @@ func NewInstrumentationManager(pkg *decorator.Package, appName, agentVariableNam
 	}
 }
 
-// TraceFunction creates a tracking object for a function declaration that can be used
-// to find tracing locations, and the status of that tracing.
-func (d *InstrumentationManager) TraceFunctionDeclaration(decl *dst.FuncDecl) {
-	t, ok := d.tracedFuncs[decl.Name.Name]
-	if ok {
-		if decl == t.body {
-			return
-		}
-		t.body = decl
-		t.traced = true
-	} else {
+// CreateFunctionDeclaration creates a tracking object for a function declaration that can be used
+// to find tracing locations. This is for initializing and set up only.
+func (d *InstrumentationManager) CreateFunctionDeclaration(decl *dst.FuncDecl) {
+	_, ok := d.tracedFuncs[decl.Name.Name]
+	if !ok {
 		d.tracedFuncs[decl.Name.Name] = &tracedFunction{
 			body: decl,
 		}
+	}
+}
+
+// UpdateFunctionDeclaration replaces the declaration stored for the given function name, and marks it as traced.
+func (d *InstrumentationManager) UpdateFunctionDeclaration(decl *dst.FuncDecl) {
+	t, ok := d.tracedFuncs[decl.Name.Name]
+	if ok {
+		t.body = decl
+		t.traced = true
 	}
 }
 
@@ -73,6 +76,8 @@ func (d *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 	var pkgCall *dst.CallExpr
 	dst.Inspect(node, func(n dst.Node) bool {
 		switch v := n.(type) {
+		case *dst.BlockStmt:
+			return false
 		case *dst.CallExpr:
 			call := v
 			functionCallIdent, ok := call.Fun.(*dst.Ident)
