@@ -400,6 +400,8 @@ var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction,
 
 // TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
 // Traces all called functions inside the current package as well.
+// This function returns a FuncDecl object pointer that contains the potentially modified version of the FuncDecl object, fn, passed. If
+// the bool field is true, then the function was modified, and requires a transaction most likely.
 func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName string) (*dst.FuncDecl, bool) {
 	TopLevelFunctionChanged := false
 	outputNode := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
@@ -413,12 +415,12 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				decl := data.GetDeclaration(fnName)
 				_, wasModified := TraceFunction(data, decl, txnVarName)
 				if wasModified {
-					TopLevelFunctionChanged = true
 					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
 				}
 			}
 			if data.RequiresTransactionArgument(fnName) {
 				call.Args = append(call.Args, dst.NewIdent(txnVarName))
+				TopLevelFunctionChanged = true
 			}
 			for _, stmtFunc := range tracingFuncs {
 				ok := stmtFunc(data, v, c, txnVarName)
