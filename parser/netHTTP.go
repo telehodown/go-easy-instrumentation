@@ -34,12 +34,25 @@ const (
 )
 
 // returns (method name, client variable name)
-// TODO: check package info, not just node path
-func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
-	ident, ok := n.Fun.(*dst.Ident)
-	if ok && ident.Path == NetHttp {
-		return ident.Name, ""
+func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, string) {
+	// check decorator package for the path of the ident
+	astIdent, ok := pkg.Decorator.Ast.Nodes[n].(*ast.CallExpr)
+	if ok {
+		method, ok := isNetHttpMethodAST(astIdent)
+		if ok {
+			return method, ""
+		}
 	}
+	method, client, ok := isNetHttpMethod(n)
+	if ok {
+		return method, client
+	}
+
+	return "", ""
+}
+
+// isNetHttpMethod checks if a call expression is a method from the net/http package
+func isNetHttpMethod(n *dst.CallExpr) (string, string, bool) {
 	sel, ok := n.Fun.(*dst.SelectorExpr)
 	if ok && sel.Sel.Name == HttpDo {
 		ident, ok := sel.X.(*dst.Ident)
@@ -65,29 +78,11 @@ func isNetHttpMethodAST(n *ast.CallExpr) (string, bool) {
 
 }
 
-// returns (method name, client variable name)
-func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, string) {
-	// check decorator package for the path of the ident
-	astIdent, ok := pkg.Decorator.Ast.Nodes[n].(*ast.CallExpr)
-	if ok {
-		method, ok := isNetHttpMethodAST(astIdent)
-		if ok {
-			return method, ""
-		}
-	}
-	method, client, ok := isNetHttpMethod(n)
-	if ok {
-		return method, client
-	}
-
-	return "", ""
-}
-
 // WrapHandleFunc looks for an instance of http.HandleFunc() and wraps it with a new relic transaction
 func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		funcName, _ := getHttpMethodAndClient(callExpr)
+		funcName, _ := getHttpMethodAndClient(callExpr, data.pkg)
 		switch funcName {
 		case HttpHandleFunc, HttpMuxHandle:
 			if len(callExpr.Args) == 2 {
@@ -292,7 +287,7 @@ func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationManager, c *dst
 		})
 
 		if call != nil {
-			funcName, _ := getHttpMethodAndClient(call)
+			funcName, _ := getHttpMethodAndClient(call, data.pkg)
 			if funcName != "" {
 				switch funcName {
 				case HttpGet, HttpPost, HttpPostForm, HttpHead:
@@ -439,7 +434,7 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 	})
 
 	if call != nil {
-		funcName, clientVar := getHttpMethodAndClient(call)
+		funcName, clientVar := getHttpMethodAndClient(call, data.pkg)
 		if funcName == HttpDo {
 			requestObject := call.Args[0]
 			if clientVar == HttpDefaultClientVariable {
@@ -471,7 +466,7 @@ func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *ds
 		case *dst.CallExpr:
 			callExpr = v
 			if callExpr != nil {
-				funcName, _ := getHttpMethodAndClient(callExpr)
+				funcName, _ := getHttpMethodAndClient(callExpr, data.pkg)
 				switch funcName {
 				case HttpHandleFunc, HttpMuxHandle:
 					if len(callExpr.Args) == 2 {
