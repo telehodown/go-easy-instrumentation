@@ -31,21 +31,46 @@ const (
 	HttpClientType = `*net/http.Client`
 )
 
-// returns (method name, client variable name)
-func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
-	ident, ok := n.Fun.(*dst.Ident)
-	if ok && ident.Path == NetHttp {
-		return ident.Name, ""
-	}
+// isNetHttpMethod checks if a call expression is a method from the net/http package
+func isNetHttpMethod(n *dst.CallExpr) (string, string, bool) {
 	sel, ok := n.Fun.(*dst.SelectorExpr)
 	if ok && sel.Sel.Name == HttpDo {
 		ident, ok := sel.X.(*dst.Ident)
-		if ok {
-			if ident.Path == NetHttp && ident.Name == HttpDefaultClient {
-				return sel.Sel.Name, HttpDefaultClientVariable
+		if ok && ident.Path == NetHttp && ident.Name == HttpDefaultClient {
+			return sel.Sel.Name, HttpDefaultClientVariable, true
+		}
+	}
+	return "", "", false
+}
+
+// Similar to isNetHttpMethod but for AST nodes
+func isNetHttpMethodAST(n *ast.CallExpr) (string, bool) {
+	funName, ok := n.Fun.(*ast.SelectorExpr).X.(*ast.Ident)
+	if ok {
+		if funName.Name == "http" {
+			method, ok := n.Fun.(*ast.SelectorExpr)
+			if ok {
+				return method.Sel.Name, true
 			}
 		}
-		return sel.Sel.Name, ""
+	}
+	return "", false
+
+}
+
+// returns (method name, client variable name)
+func getHttpMethodAndClient(n *dst.CallExpr, pkg *decorator.Package) (string, string) {
+	// check decorator package for the path of the ident
+	astIdent, ok := pkg.Decorator.Ast.Nodes[n].(*ast.CallExpr)
+	if ok {
+		method, ok := isNetHttpMethodAST(astIdent)
+		if ok {
+			return method, ""
+		}
+	}
+	method, client, ok := isNetHttpMethod(n)
+	if ok {
+		return method, client
 	}
 
 	return "", ""
@@ -54,7 +79,7 @@ func getHttpMethodAndClient(n *dst.CallExpr) (string, string) {
 func InstrumentHandleFunc(n dst.Node, data *InstrumentationData, parent ParentFunction) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		funcName, _ := getHttpMethodAndClient(callExpr)
+		funcName, _ := getHttpMethodAndClient(callExpr, data.pkg)
 		if funcName == HttpHandleFunc && len(callExpr.Args) == 2 {
 			// Capture name of handle funcs for deeper instrumentation
 			handleFunc, ok := callExpr.Args[1].(*dst.Ident)
@@ -244,7 +269,7 @@ func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationData, parent Pa
 		if len(stmt.Rhs) == 1 {
 			call, ok = stmt.Rhs[0].(*dst.CallExpr)
 			if ok {
-				funcName, _ := getHttpMethodAndClient(call)
+				funcName, _ := getHttpMethodAndClient(call, data.pkg)
 				if funcName != "" {
 					switch funcName {
 					case HttpGet, HttpPost, HttpPostForm, HttpHead:
@@ -350,7 +375,7 @@ func ExternalHttpCall(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.S
 	if len(stmt.Rhs) == 1 {
 		call, ok := stmt.Rhs[0].(*dst.CallExpr)
 		if ok {
-			funcName, clientVar := getHttpMethodAndClient(call)
+			funcName, clientVar := getHttpMethodAndClient(call, pkg)
 			if funcName == HttpDo {
 				requestObject := call.Args[0]
 				if clientVar == HttpDefaultClientVariable {
