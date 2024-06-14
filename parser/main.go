@@ -1,24 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
-	"os/exec"
-	"path"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/dstutil"
 	"golang.org/x/tools/go/packages"
-)
-
-// Default Values
-const (
-	defaultAgentVariableName = "NewRelicAgent"
-	defaultAppName           = "AST Example"
-	defaultPackageName       = "."
-	defaultPackagePath       = "../demo-app"
 )
 
 type InstrumentationFunc func(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
@@ -75,69 +64,6 @@ func createDiffFile(path string) {
 	defer f.Close()
 }
 
-func CLISplash() {
-	cmd := exec.Command("clear")
-	cmd.Stdout = os.Stdout
-	cmd.Run()
-
-	fmt.Printf("New Relic Go Agent Pre Instrumentation Tool (Pre-Alpha)\n")
-	fmt.Printf("-------------------------------------------------------\n")
-	fmt.Printf("This tool will instrument your Go application with the New Relic Go Agent\n")
-	fmt.Printf("And generate a diff file to show the changes made to your code\n")
-	fmt.Printf("-------------------------------------------------------\n")
-	fmt.Printf("\n")
-	fmt.Printf("\n")
-
-}
-func CLIPrompts(packagePath, packageName, appName, agentVariableName, diffFileLocation string) {
-
-	// Prompt user to enter the path to the package they want to instrument
-	fmt.Printf("Enter the path to the package you want to instrument (default if left blank: '%s'):", defaultPackagePath)
-	fmt.Scanln(&packagePath)
-	if packagePath == "" {
-		packagePath = defaultPackagePath
-	}
-
-	// Prompt user to enter the package name
-	fmt.Printf("Enter the package name (default: '%s'):", defaultPackageName)
-	fmt.Scanln(&packageName)
-
-	if packageName == "" {
-		packageName = defaultPackageName
-	}
-
-	// Prompt user to enter the application name
-	fmt.Printf("Enter the application name (default: '%s'):", defaultAppName)
-	fmt.Scanln(&appName)
-
-	if appName == "" {
-		appName = defaultAppName
-	}
-
-	// Prompt user to enter the agent variable name
-	fmt.Printf("Enter the agent variable name (default: '%s'):", defaultAgentVariableName)
-	fmt.Scanln(&agentVariableName)
-
-	if agentVariableName == "" {
-		agentVariableName = defaultAgentVariableName
-	}
-
-	// Prompt user to enter the diff file output location
-	fmt.Printf("Enter the diff file output location (default: '%s/'):", diffFileLocation)
-	fmt.Scanln(&diffFileLocation)
-
-	if diffFileLocation == "" {
-		// Set default diff file output location
-		wd, _ := os.Getwd()
-		diffFileLocation = wd
-
-	}
-	diffFile := fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(packagePath))
-
-	createDiffFile(diffFile)
-
-}
-
 func main() {
 	// check if ran with -default flag
 	isDefault := false
@@ -147,28 +73,24 @@ func main() {
 		}
 	}
 
-	var packagePath, packageName, appName, agentVariableName, diffFileLocation string
-	// Set default diff file output location
-	wd, _ := os.Getwd()
-	diffFileLocation = wd
+	cfg := NewCLIConfig()
 
-	CLISplash()
 	if !isDefault {
-		CLIPrompts(packagePath, packageName, appName, agentVariableName, diffFileLocation)
+		CLISplash()
+		cfg.CLIPrompts()
 	}
 
-	diffFile := fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(packagePath))
-	createDiffFile(diffFile)
+	createDiffFile(cfg.DiffFile)
 
 	//GoGetAgent(packagePath)
 
 	loadMode := packages.LoadSyntax
-	pkgs, err := decorator.Load(&packages.Config{Dir: packagePath, Mode: loadMode}, packageName)
+	pkgs, err := decorator.Load(&packages.Config{Dir: cfg.PackagePath, Mode: loadMode}, cfg.PackageName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, pkg := range pkgs {
-		InstrumentPackage(pkg, appName, agentVariableName, diffFile)
+		InstrumentPackage(pkg, cfg.AppName, cfg.AgentVariableName, cfg.DiffFile)
 	}
 }
