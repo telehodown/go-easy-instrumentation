@@ -286,7 +286,7 @@ func InstrumentHttpClient(n dst.Node, data *InstrumentationManager, c *dstutil.C
 
 func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 	comment := []string{
-		fmt.Sprintf("// the \"%s\" net/http method can not be instrumented and its outbound traffic can not be traced", method),
+		fmt.Sprintf("// the \"http.%s()\" net/http method can not be instrumented and its outbound traffic can not be traced", method),
 		"// please see these examples of code patterns for external http calls that can be instrumented:",
 		"// https://docs.newrelic.com/docs/apm/agents/go-agent/configuration/distributed-tracing-go-agent/#make-http-requests",
 	}
@@ -309,7 +309,10 @@ func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationManager, c *dst
 				funcName := GetNetHttpMethod(c, data.pkg)
 				switch funcName {
 				case HttpGet, HttpPost, HttpPostForm, HttpHead:
-					v.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, v.Decorations())...)
+					astCall := data.pkg.Decorator.Ast.Nodes[c].(*ast.CallExpr)
+					if data.pkg.TypesInfo.TypeOf(astCall).String() == "(resp *net/http.Response, err error)" {
+						v.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, v.Decorations())...)
+					}
 				}
 				return false
 			}
