@@ -58,9 +58,6 @@ func (cfg *CLIConfig) CLIPrompts() {
 	diffFileLocation := wd
 	cfg.DiffFile = fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(cfg.PackagePath))
 
-	// wd, _ := os.Getwd()
-	// diffFileLocation = wd
-
 	// Prompt user to enter the path to the package they want to instrument
 	var packagePathPrompt string
 	fmt.Printf("Enter the path to the package you want to instrument (default if left blank: '%s'):", defaultPackagePath)

@@ -82,8 +82,6 @@ func main() {
 
 	createDiffFile(cfg.DiffFile)
 
-	//GoGetAgent(packagePath)
-
 	loadMode := packages.LoadSyntax
 	pkgs, err := decorator.Load(&packages.Config{Dir: cfg.PackagePath, Mode: loadMode}, cfg.PackageName)
 	if err != nil {
