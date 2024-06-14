@@ -67,7 +67,7 @@ func createDiffFile(path string) {
 }
 
 func main() {
-	packagePath := "../http-mux"
+	packagePath := "../demo-app"
 	packageName := "."
 	appName := "AST Example"
 	agentVariableName := "NewRelicAgent"

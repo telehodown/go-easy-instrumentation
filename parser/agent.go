@@ -240,7 +240,7 @@ func txnAsParameter() *dst.Field {
 	}
 }
 
-func deferAsyncSegment(txnVarName string) *dst.DeferStmt {
+func deferSegment(segmentName, txnVarName string) *dst.DeferStmt {
 	return &dst.DeferStmt{
 		Call: &dst.CallExpr{
 			Fun: &dst.SelectorExpr{
@@ -254,7 +254,7 @@ func deferAsyncSegment(txnVarName string) *dst.DeferStmt {
 					Args: []dst.Expr{
 						&dst.BasicLit{
 							Kind:  token.STRING,
-							Value: "\"async\"",
+							Value: fmt.Sprintf(`"%s"`, segmentName),
 						},
 					},
 				},
@@ -399,7 +399,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter())
 				v.Call.Args = append(v.Call.Args, txnNewGoroutine())
 				// create async segment
-				fun.Body.List = append([]dst.Stmt{deferAsyncSegment(txnVarName)}, fun.Body.List...)
+				fun.Body.List = append([]dst.Stmt{deferSegment("async literal", txnVarName)}, fun.Body.List...)
 				c.Replace(v)
 				TopLevelFunctionChanged = true
 			default:
@@ -408,7 +408,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 					decl := data.GetDeclaration(fnName)
 					TraceFunction(data, decl, txnVarName)
 					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
-					decl.Body.List = append([]dst.Stmt{deferAsyncSegment(txnVarName)}, decl.Body.List...)
+					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", fnName), txnVarName)}, decl.Body.List...)
 				}
 				if data.RequiresTransactionArgument(fnName) {
 					call.Args = append(call.Args, dst.NewIdent(txnVarName))
@@ -423,6 +423,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				_, wasModified := TraceFunction(data, decl, txnVarName)
 				if wasModified {
 					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
+					decl.Body.List = append([]dst.Stmt{deferSegment(fnName, txnVarName)}, decl.Body.List...)
 				}
 			}
 			if data.RequiresTransactionArgument(fnName) {
