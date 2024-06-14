@@ -1,10 +1,12 @@
 package main
 
 import (
-	"demo-app/pkg"
+	"errors"
 	"io"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 )
 
 // the most basic http handler function
@@ -12,8 +14,17 @@ func index(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "hello world")
 }
 
+func DoAThing(willError bool) (string, bool, error) {
+	time.Sleep(200 * time.Millisecond)
+	if willError {
+		return "thing not done", false, errors.New("this is an error")
+	}
+
+	return "thing complete", true, nil
+}
+
 func noticeError(w http.ResponseWriter, r *http.Request) {
-	str, _, err := pkg.DoAThing(true)
+	str, _, err := DoAThing(true)
 	if err != nil {
 		io.WriteString(w, err.Error())
 	} else {
@@ -67,4 +78,32 @@ func roundtripper(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 	io.Copy(w, resp.Body)
+}
+
+func async(w http.ResponseWriter, r *http.Request) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	wg.Wait()
+	w.Write([]byte("done!"))
+}
+
+func doAsyncThing(wg *sync.WaitGroup) {
+	defer wg.Done()
+	time.Sleep(100 * time.Millisecond)
+	_, err := http.Get("http://example.com")
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func async2(w http.ResponseWriter, r *http.Request) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go doAsyncThing(wg)
+	wg.Wait()
+	w.Write([]byte("done!"))
 }

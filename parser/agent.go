@@ -1,16 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
-)
-
-const (
-// agentImport = "github.com/newrelic/go-agent/v3"
+	"github.com/dave/dst/dstutil"
 )
 
 func panicOnError() *dst.IfStmt {
@@ -143,32 +141,81 @@ func shutdownAgent(AgentVariableName string) *dst.ExprStmt {
 	}
 }
 
-/*
-func containsAgentImport(imports []*dst.ImportSpec) bool {
-	for _, imp := range imports {
-		if imp.Path.Value == agentImport {
-			return true
-		}
+func startTransaction(appVariableName, transactionVariableName, transactionName string, overwriteVariable bool) *dst.AssignStmt {
+	tok := token.DEFINE
+	if overwriteVariable {
+		tok = token.ASSIGN
 	}
-	return false
+	return &dst.AssignStmt{
+		Lhs: []dst.Expr{dst.NewIdent(transactionVariableName)},
+		Rhs: []dst.Expr{
+			&dst.CallExpr{
+				Args: []dst.Expr{
+					&dst.BasicLit{
+						Kind:  token.STRING,
+						Value: fmt.Sprintf(`"%s"`, transactionName),
+					},
+				},
+				Fun: &dst.SelectorExpr{
+					X:   dst.NewIdent(appVariableName),
+					Sel: dst.NewIdent("StartTransaction"),
+				},
+			},
+		},
+		Tok: tok,
+	}
 }
 
-func ImportAgent(fileset *token.FileSet, file *dst.File) string {
-	if !containsAgentImport(file.Imports) {
-		dstutil.AddImport(fileset, file, agentImport)
-		return ""
+func endTransaction(transactionVariableName string) *dst.ExprStmt {
+	return &dst.ExprStmt{
+		X: &dst.CallExpr{
+			Fun: &dst.SelectorExpr{
+				X:   dst.NewIdent(transactionVariableName),
+				Sel: dst.NewIdent("End"),
+			},
+		},
 	}
-	return ""
 }
-*/
 
-func InjectAgent(n dst.Node, data *InstrumentationData, parent ParentFunction) {
-	if decl, ok := n.(*dst.FuncDecl); ok {
+// InstrumentMain looks for the main method of a program, and uses this as an instrumentation initialization and injection point
+func InstrumentMain(mainFunctionNode dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+	txnStarted := false
+	if decl, ok := mainFunctionNode.(*dst.FuncDecl); ok {
 		// only inject go agent into the main.main function
-		if data.pkg.Name == "main" && decl.Name.Name == "main" {
+		if decl.Name.Name == "main" {
 			agentDecl := createAgentAST(data.appName, data.agentVariableName)
 			decl.Body.List = append(agentDecl, decl.Body.List...)
 			decl.Body.List = append(decl.Body.List, shutdownAgent(data.agentVariableName))
+
+			newMain := dstutil.Apply(decl, func(c *dstutil.Cursor) bool {
+				node := c.Node()
+				switch v := node.(type) {
+				case *dst.ExprStmt:
+					fnName, call := data.GetPackageFunctionInvocation(v)
+					// check if the called function has been instrumented already, if not, instrument it.
+					if data.ShouldInstrumentFunction(fnName) {
+						decl := data.GetDeclaration(fnName)
+						_, wasModified := TraceFunction(data, decl, defaultTxnName)
+						if wasModified {
+							// add transaction to declaration arguments
+							data.AddTxnArgumentToFunctionDecl(decl, defaultTxnName, fnName)
+						}
+					}
+					// pass the called function a transaction if needed
+					if data.RequiresTransactionArgument(fnName) {
+						txnVarName := defaultTxnName
+						c.InsertBefore(startTransaction(data.agentVariableName, txnVarName, fnName, txnStarted))
+						c.InsertAfter(endTransaction(txnVarName))
+						call.Args = append(call.Args, dst.NewIdent(defaultTxnName))
+						txnStarted = true
+					}
+					WrapHandleFunc(v.X, data, c)
+				}
+
+				return true
+			}, nil)
+			// this will skip the tracing of this function in the outer tree walking algorithm
+			c.Replace(newMain)
 		}
 	}
 }
@@ -193,15 +240,13 @@ func txnAsParameter() *dst.Field {
 	}
 }
 
-func deferAsyncSegment() *dst.DeferStmt {
+func deferSegment(segmentName, txnVarName string) *dst.DeferStmt {
 	return &dst.DeferStmt{
 		Call: &dst.CallExpr{
 			Fun: &dst.SelectorExpr{
 				X: &dst.CallExpr{
 					Fun: &dst.SelectorExpr{
-						X: &dst.Ident{
-							Name: "txn",
-						},
+						X: dst.NewIdent(txnVarName),
 						Sel: &dst.Ident{
 							Name: "StartSegment",
 						},
@@ -209,7 +254,7 @@ func deferAsyncSegment() *dst.DeferStmt {
 					Args: []dst.Expr{
 						&dst.BasicLit{
 							Kind:  token.STRING,
-							Value: "\"async\"",
+							Value: fmt.Sprintf(`"%s"`, segmentName),
 						},
 					},
 				},
@@ -231,19 +276,6 @@ func txnNewGoroutine() *dst.CallExpr {
 				Name: "NewGoroutine",
 			},
 		},
-	}
-}
-
-// dfs search for async func block and injection of telemetry
-func traceAsyncFunc(stmt *dst.GoStmt) {
-	// Go function literal
-	if fun, ok := stmt.Call.Fun.(*dst.FuncLit); ok {
-		// Add threaded txn to function arguments and parameters
-		fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter())
-		stmt.Call.Args = append(stmt.Call.Args, txnNewGoroutine())
-
-		// create async segment
-		fun.Body.List = append([]dst.Stmt{deferAsyncSegment()}, fun.Body.List...)
 	}
 }
 
@@ -332,49 +364,84 @@ func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
 	return ""
 }
 
+type TracingFunction func(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
+
+var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
+
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
 // with a newrelic transaction. All transactions are assumed to be named "txn"
-func NoticeError(stmt *dst.AssignStmt, pkg *decorator.Package, body []dst.Stmt, bodyIndex int, txnName string) ([]dst.Stmt, int) {
-	errVar := findErrorVariable(stmt, pkg)
-	if errVar != "" {
-		newBody := []dst.Stmt{}
-		newBody = append(newBody, body[:bodyIndex+1]...)
-		newBody = append(newBody, txnNoticeError(errVar, txnName, stmt.Decorations()))
-		newBody = append(newBody, body[bodyIndex+1:]...)
-		return newBody, 1
-	}
-
-	return nil, 0
-}
-
-// TODO, rething this using a stack and using the cursor to simplify the logic
-// TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
-func TraceFunction(data *InstrumentationData, body []dst.Stmt, txnName string) ([]dst.Stmt, bool) {
-	instrumentedBody := body
-	addedInstrumentation := false
-	for i := 0; i < len(instrumentedBody); i++ {
-		stmt := instrumentedBody[i]
-		switch v := stmt.(type) {
-		case *dst.ForStmt:
-			TraceFunction(data, v.Body.List, txnName)
-		case *dst.GoStmt:
-			traceAsyncFunc(v)
-		case *dst.AssignStmt:
-			body, addedLines := NoticeError(v, data.pkg, instrumentedBody, i, txnName)
-			if body != nil {
-				instrumentedBody = body
-				addedInstrumentation = true
-				i += addedLines
-			}
-
-			body, addedLines = ExternalHttpCall(v, data.pkg, instrumentedBody, i, txnName)
-			if body != nil {
-				instrumentedBody = body
-				addedInstrumentation = true
-				i += addedLines
-			}
+func NoticeError(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+	switch nodeVal := stmt.(type) {
+	case *dst.AssignStmt:
+		errVar := findErrorVariable(nodeVal, data.pkg)
+		if errVar != "" {
+			c.InsertAfter(txnNoticeError(errVar, txnName, nodeVal.Decorations()))
+			return true
 		}
 	}
-	return instrumentedBody, addedInstrumentation
+	return false
+}
+
+// TraceFunction adds tracing to a function. This includes error capture, and passing agent metadata to relevant functions and services.
+// Traces all called functions inside the current package as well.
+// This function returns a FuncDecl object pointer that contains the potentially modified version of the FuncDecl object, fn, passed. If
+// the bool field is true, then the function was modified, and requires a transaction most likely.
+func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName string) (*dst.FuncDecl, bool) {
+	TopLevelFunctionChanged := false
+	outputNode := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
+		n := c.Node()
+		switch v := n.(type) {
+		case *dst.GoStmt:
+			switch fun := v.Call.Fun.(type) {
+			case *dst.FuncLit:
+				// Add threaded txn to function arguments and parameters
+				fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter())
+				v.Call.Args = append(v.Call.Args, txnNewGoroutine())
+				// create async segment
+				fun.Body.List = append([]dst.Stmt{deferSegment("async literal", txnVarName)}, fun.Body.List...)
+				c.Replace(v)
+				TopLevelFunctionChanged = true
+			default:
+				fnName, call := data.GetPackageFunctionInvocation(v.Call)
+				if data.ShouldInstrumentFunction(fnName) {
+					decl := data.GetDeclaration(fnName)
+					TraceFunction(data, decl, txnVarName)
+					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
+					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", fnName), txnVarName)}, decl.Body.List...)
+				}
+				if data.RequiresTransactionArgument(fnName) {
+					call.Args = append(call.Args, dst.NewIdent(txnVarName))
+					c.Replace(v)
+					TopLevelFunctionChanged = true
+				}
+			}
+		case dst.Stmt:
+			fnName, call := data.GetPackageFunctionInvocation(v)
+			if data.ShouldInstrumentFunction(fnName) {
+				decl := data.GetDeclaration(fnName)
+				_, wasModified := TraceFunction(data, decl, txnVarName)
+				if wasModified {
+					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
+					decl.Body.List = append([]dst.Stmt{deferSegment(fnName, txnVarName)}, decl.Body.List...)
+				}
+			}
+			if data.RequiresTransactionArgument(fnName) {
+				call.Args = append(call.Args, dst.NewIdent(txnVarName))
+				TopLevelFunctionChanged = true
+			}
+			for _, stmtFunc := range tracingFuncs {
+				ok := stmtFunc(data, v, c, txnVarName)
+				if ok {
+					TopLevelFunctionChanged = true
+				}
+			}
+		}
+		return true
+	})
+
+	// update the stored declaration, marking it as traced
+	decl := outputNode.(*dst.FuncDecl)
+	data.UpdateFunctionDeclaration(decl)
+	return decl, TopLevelFunctionChanged
 }
