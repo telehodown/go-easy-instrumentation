@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
-	"path"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -67,22 +65,30 @@ func createDiffFile(path string) {
 }
 
 func main() {
-	packagePath := "../demo-app"
-	packageName := "."
-	appName := "AST Example"
-	agentVariableName := "NewRelicAgent"
+	// check if ran with -default flag
+	isDefault := false
+	for _, arg := range os.Args {
+		if arg == "--default" {
+			isDefault = true
+		}
+	}
 
-	wd, _ := os.Getwd()
-	diffFile := fmt.Sprintf("%s/%s.diff", wd, path.Base(packagePath))
-	createDiffFile(diffFile)
+	cfg := NewCLIConfig()
+
+	if !isDefault {
+		CLISplash()
+		cfg.CLIPrompts()
+	}
+
+	createDiffFile(cfg.DiffFile)
 
 	loadMode := packages.LoadSyntax
-	pkgs, err := decorator.Load(&packages.Config{Dir: packagePath, Mode: loadMode}, packageName)
+	pkgs, err := decorator.Load(&packages.Config{Dir: cfg.PackagePath, Mode: loadMode}, cfg.PackageName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, pkg := range pkgs {
-		InstrumentPackage(pkg, appName, agentVariableName, diffFile)
+		InstrumentPackage(pkg, cfg.AppName, cfg.AgentVariableName, cfg.DiffFile)
 	}
 }
