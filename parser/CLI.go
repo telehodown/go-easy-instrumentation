@@ -39,11 +39,16 @@ func CLISplash() {
 }
 
 func NewCLIConfig() *CLIConfig {
+	wd, _ := os.Getwd()
+	diffFileLocation := wd
+	diffFile := fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(defaultPackagePath))
+
 	return &CLIConfig{
 		PackagePath:       defaultPackagePath,
 		PackageName:       defaultPackageName,
 		AppName:           defaultAppName,
 		AgentVariableName: defaultAgentVariableName,
+		DiffFile:          diffFile,
 	}
 }
 
@@ -54,13 +59,9 @@ func (cfg *CLIConfig) CLIPrompts() {
 	cfg.AppName = defaultAppName
 	cfg.AgentVariableName = defaultAgentVariableName
 
-	wd, _ := os.Getwd()
-	diffFileLocation := wd
-	cfg.DiffFile = fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(cfg.PackagePath))
-
 	// Prompt user to enter the path to the package they want to instrument
 	var packagePathPrompt string
-	fmt.Printf("Enter the path to the package you want to instrument (default if left blank: '%s'):", defaultPackagePath)
+	fmt.Printf("Enter the path to the package you want to instrument (default if left blank: '%s'): ", defaultPackagePath)
 	fmt.Scanln(&packagePathPrompt)
 
 	if packagePathPrompt != "" {
@@ -69,7 +70,12 @@ func (cfg *CLIConfig) CLIPrompts() {
 			fmt.Printf("Error: %s\n", err)
 			os.Exit(1)
 		} else {
+			// Set new path and update diff file name
 			cfg.PackagePath = packagePathPrompt
+			wd, _ := os.Getwd()
+			diffFileLocation := wd
+			cfg.DiffFile = fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(cfg.PackagePath))
+
 		}
 	}
 
@@ -81,7 +87,7 @@ func (cfg *CLIConfig) CLIPrompts() {
 	//	packageName = defaultPackageName
 	// }
 	// Prompt user to enter the application name
-	fmt.Printf("Override Application Name? Y/N (default: '%s'):", defaultAppName)
+	fmt.Printf("Override Application Name? Y/N (default: '%s'): ", defaultAppName)
 	userPrompt := ""
 	fmt.Scanln(&userPrompt)
 
