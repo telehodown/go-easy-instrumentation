@@ -67,23 +67,19 @@ func createDiffFile(path string) {
 
 func main() {
 	// check if ran with -default fladg
-	/*	isDefault := false
-		for _, arg := range os.Args {
-			if arg == "--default" {
-				isDefault = true
-			}
+	isDefault := false
+	for _, arg := range os.Args {
+		if arg == "--default" {
+			isDefault = true
 		}
-	*/
+	}
 
 	cfg := NewCLIConfig()
 
-	/*
-		if !isDefault {
-			CLISplash()
-			cfg.CLIPrompts()
-		}
-
-	*/
+	if !isDefault {
+		CLISplash()
+		cfg.CLIPrompts()
+	}
 
 	createDiffFile(cfg.DiffFile)
 

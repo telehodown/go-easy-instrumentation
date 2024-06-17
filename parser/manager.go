@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"go/ast"
 	"go/types"
 	"log"
@@ -201,7 +200,7 @@ func (d *InstrumentationManager) WriteDiff() {
 		if err := r.Fprint(modifiedFile, file); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(modifiedFile.String())
+
 		f, err := os.OpenFile(d.diffFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Println(err)
