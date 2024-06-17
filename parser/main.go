@@ -10,6 +10,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// InstrumentationFunc is a type that is invoked on a function declaration
 type InstrumentationFunc func(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 
 func instrumentPackage(data *InstrumentationManager, instrumentationFunctions ...InstrumentationFunc) {
@@ -21,7 +22,6 @@ func instrumentPackage(data *InstrumentationManager, instrumentationFunctions ..
 					for _, instFunc := range instrumentationFunctions {
 						instFunc(n, data, c)
 					}
-
 					return true
 				})
 			}
@@ -53,6 +53,7 @@ func InstrumentPackage(pkg *decorator.Package, appName, agentVariableName, diffF
 	//	- shutdown the agent
 	instrumentPackage(data, InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
 
+	data.AddRequiredModules()
 	data.WriteDiff()
 }
 
@@ -65,20 +66,24 @@ func createDiffFile(path string) {
 }
 
 func main() {
-	// check if ran with -default flag
-	isDefault := false
-	for _, arg := range os.Args {
-		if arg == "--default" {
-			isDefault = true
+	// check if ran with -default fladg
+	/*	isDefault := false
+		for _, arg := range os.Args {
+			if arg == "--default" {
+				isDefault = true
+			}
 		}
-	}
+	*/
 
 	cfg := NewCLIConfig()
 
-	if !isDefault {
-		CLISplash()
-		cfg.CLIPrompts()
-	}
+	/*
+		if !isDefault {
+			CLISplash()
+			cfg.CLIPrompts()
+		}
+
+	*/
 
 	createDiffFile(cfg.DiffFile)
 

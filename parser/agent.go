@@ -64,6 +64,7 @@ func createAgentAST(AppName, AgentVariableName string) []dst.Stmt {
 				Fun: &dst.SelectorExpr{
 					X: &dst.Ident{
 						Name: "newrelic",
+						Path: newrelicAgentImport,
 					},
 					Sel: &dst.Ident{
 						Name: "NewApplication",
@@ -74,6 +75,7 @@ func createAgentAST(AppName, AgentVariableName string) []dst.Stmt {
 						Fun: &dst.SelectorExpr{
 							X: &dst.Ident{
 								Name: "newrelic",
+								Path: newrelicAgentImport,
 							},
 							Sel: &dst.Ident{
 								Name: "ConfigAppName",
@@ -90,6 +92,7 @@ func createAgentAST(AppName, AgentVariableName string) []dst.Stmt {
 						Fun: &dst.SelectorExpr{
 							X: &dst.Ident{
 								Name: "newrelic",
+								Path: newrelicAgentImport,
 							},
 							Sel: &dst.Ident{
 								Name: "ConfigFromEnvironment",
@@ -187,6 +190,9 @@ func InstrumentMain(mainFunctionNode dst.Node, data *InstrumentationManager, c *
 			decl.Body.List = append(agentDecl, decl.Body.List...)
 			decl.Body.List = append(decl.Body.List, shutdownAgent(data.agentVariableName))
 
+			// add go-agent/v3/newrelic to imports
+			data.AddImport(newrelicAgentImport)
+
 			newMain := dstutil.Apply(decl, func(c *dstutil.Cursor) bool {
 				node := c.Node()
 				switch v := node.(type) {
@@ -199,6 +205,7 @@ func InstrumentMain(mainFunctionNode dst.Node, data *InstrumentationManager, c *
 						if wasModified {
 							// add transaction to declaration arguments
 							data.AddTxnArgumentToFunctionDecl(decl, defaultTxnName, fnName)
+							data.AddImport(newrelicAgentImport)
 						}
 					}
 					// pass the called function a transaction if needed
@@ -398,6 +405,9 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				// Add threaded txn to function arguments and parameters
 				fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter())
 				v.Call.Args = append(v.Call.Args, txnNewGoroutine())
+				// add go-agent/v3/newrelic to imports
+				data.AddImport(newrelicAgentImport)
+
 				// create async segment
 				fun.Body.List = append([]dst.Stmt{deferSegment("async literal", txnVarName)}, fun.Body.List...)
 				c.Replace(v)
@@ -408,6 +418,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 					decl := data.GetDeclaration(fnName)
 					TraceFunction(data, decl, txnVarName)
 					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
+					data.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", fnName), txnVarName)}, decl.Body.List...)
 				}
 				if data.RequiresTransactionArgument(fnName) {
@@ -423,6 +434,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				_, wasModified := TraceFunction(data, decl, txnVarName)
 				if wasModified {
 					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
+					data.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fnName, txnVarName)}, decl.Body.List...)
 				}
 			}

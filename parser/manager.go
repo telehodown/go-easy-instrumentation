@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/types"
 	"log"
 	"os"
+	"os/exec"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -34,8 +36,12 @@ type InstrumentationManager struct {
 	agentVariableName string
 	pkg               *decorator.Package
 	tracedFuncs       map[string]*tracedFunction
-	txnVariableNames  map[string]int
+	importsAdded      map[string]bool
 }
+
+const (
+	newrelicAgentImport string = "github.com/newrelic/go-agent/v3/newrelic"
+)
 
 // NewInstrumentationManager initializes an InstrumentationManager cache for a given package.
 func NewInstrumentationManager(pkg *decorator.Package, appName, agentVariableName, diffFile string) *InstrumentationManager {
@@ -45,8 +51,22 @@ func NewInstrumentationManager(pkg *decorator.Package, appName, agentVariableNam
 		appName:           appName,
 		agentVariableName: agentVariableName,
 		tracedFuncs:       map[string]*tracedFunction{},
-		txnVariableNames:  map[string]int{},
+		importsAdded:      map[string]bool{},
 	}
+}
+
+func (d *InstrumentationManager) AddImport(path string) {
+	d.importsAdded[path] = true
+}
+
+func (d *InstrumentationManager) GetImports(fileName string) []string {
+	i := 0
+	ret := make([]string, len(d.importsAdded))
+	for k := range d.importsAdded {
+		ret[i] = string(k)
+		i++
+	}
+	return ret
 }
 
 // CreateFunctionDeclaration creates a tracking object for a function declaration that can be used
@@ -169,6 +189,7 @@ func (d *InstrumentationManager) GetDeclaration(functionName string) *dst.FuncDe
 // WriteDiff writes out the changes made to a file to the diff file for this package.
 func (d *InstrumentationManager) WriteDiff() {
 	r := decorator.NewRestorerWithImports(d.pkg.Dir, gopackages.New(d.pkg.Dir))
+
 	for _, file := range d.pkg.Syntax {
 		fName := d.pkg.Decorator.Filenames[file]
 		originalFile, err := os.ReadFile(fName)
@@ -178,8 +199,9 @@ func (d *InstrumentationManager) WriteDiff() {
 
 		modifiedFile := bytes.NewBuffer([]byte{})
 		if err := r.Fprint(modifiedFile, file); err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
+		fmt.Println(modifiedFile.String())
 		f, err := os.OpenFile(d.diffFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Println(err)
@@ -190,4 +212,15 @@ func (d *InstrumentationManager) WriteDiff() {
 			log.Println(err)
 		}
 	}
+}
+
+func (d *InstrumentationManager) AddRequiredModules() {
+	exec.Command("cd", d.pkg.PkgPath).Run()
+	for module := range d.importsAdded {
+		err := exec.Command("go", "get", module).Run()
+		if err != nil {
+			log.Fatalf("Error Getting GO module %s: %v", module, err)
+		}
+	}
+	exec.Command("cd", "-").Run()
 }

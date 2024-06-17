@@ -120,6 +120,7 @@ func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 						Fun: &dst.SelectorExpr{
 							X: &dst.Ident{
 								Name: "newrelic",
+								Path: newrelicAgentImport,
 							},
 							Sel: &dst.Ident{
 								Name: "WrapHandleFunc",
@@ -158,6 +159,7 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 				Fun: &dst.SelectorExpr{
 					X: &dst.Ident{
 						Name: "newrelic",
+						Path: newrelicAgentImport,
 					},
 					Sel: &dst.Ident{
 						Name: "FromContext",
@@ -247,7 +249,10 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
 				Fun: &dst.SelectorExpr{
-					X:   dst.NewIdent("newrelic"),
+					X: &dst.Ident{
+						Name: "newrelic",
+						Path: newrelicAgentImport,
+					},
 					Sel: dst.NewIdent("NewRoundTripper"),
 				},
 				Args: []dst.Expr{
@@ -279,6 +284,7 @@ func InstrumentHttpClient(n dst.Node, data *InstrumentationManager, c *dstutil.C
 				// add new line that adds roundtripper to transports
 				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
 				stmt.Decs.After = dst.None
+				data.AddImport(newrelicAgentImport)
 			}
 		}
 	}
@@ -342,7 +348,10 @@ func startExternalSegment(request dst.Expr, txnVar, segmentVar string, nodeDecs 
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
 				Fun: &dst.SelectorExpr{
-					X:   dst.NewIdent("newrelic"),
+					X: &dst.Ident{
+						Name: "newrelic",
+						Path: newrelicAgentImport,
+					},
 					Sel: dst.NewIdent("StartExternalSegment"),
 				},
 				Args: []dst.Expr{
@@ -413,7 +422,10 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeD
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
 				Fun: &dst.SelectorExpr{
-					X:   dst.NewIdent("newrelic"),
+					X: &dst.Ident{
+						Name: "newrelic",
+						Path: newrelicAgentImport,
+					},
 					Sel: dst.NewIdent("RequestWithTransactionContext"),
 				},
 				Args: []dst.Expr{
@@ -471,12 +483,14 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 			c.InsertBefore(startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
 			c.InsertAfter(endExternalSegment(segmentName, stmt.Decorations()))
 			responseVar := getHttpResponseExpr(data, stmt)
+			data.AddImport(newrelicAgentImport)
 			if responseVar != nil {
 				c.InsertAfter(captureHttpResponse(segmentName, responseVar))
 			}
 			return true
 		} else {
 			c.InsertBefore(addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
+			data.AddImport(newrelicAgentImport)
 			return true
 		}
 	}
@@ -502,6 +516,7 @@ func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *ds
 							Fun: &dst.SelectorExpr{
 								X: &dst.Ident{
 									Name: "newrelic",
+									Path: newrelicAgentImport,
 								},
 								Sel: &dst.Ident{
 									Name: "WrapHandleFunc",
@@ -520,6 +535,7 @@ func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *ds
 						},
 					}
 					wasModified = true
+					data.AddImport(newrelicAgentImport)
 					return false
 				}
 			}
