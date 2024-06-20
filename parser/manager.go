@@ -214,12 +214,21 @@ func (d *InstrumentationManager) WriteDiff() {
 }
 
 func (d *InstrumentationManager) AddRequiredModules() {
-	exec.Command("cd", d.pkg.PkgPath).Run()
+	wd, _ := os.Getwd()
+	err := os.Chdir(d.pkg.Dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	for module := range d.importsAdded {
 		err := exec.Command("go", "get", module).Run()
 		if err != nil {
 			log.Fatalf("Error Getting GO module %s: %v", module, err)
 		}
 	}
-	exec.Command("cd", "-").Run()
+
+	err = os.Chdir(wd)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

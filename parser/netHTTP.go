@@ -117,14 +117,9 @@ func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 				oldArgs := callExpr.Args
 				callExpr.Args = []dst.Expr{
 					&dst.CallExpr{
-						Fun: &dst.SelectorExpr{
-							X: &dst.Ident{
-								Name: "newrelic",
-								Path: newrelicAgentImport,
-							},
-							Sel: &dst.Ident{
-								Name: "WrapHandleFunc",
-							},
+						Fun: &dst.Ident{
+							Name: "WrapHandleFunc",
+							Path: newrelicAgentImport,
 						},
 						Args: []dst.Expr{
 							&dst.Ident{
@@ -156,14 +151,9 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 		Tok: token.DEFINE,
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
-				Fun: &dst.SelectorExpr{
-					X: &dst.Ident{
-						Name: "newrelic",
-						Path: newrelicAgentImport,
-					},
-					Sel: &dst.Ident{
-						Name: "FromContext",
-					},
+				Fun: &dst.Ident{
+					Name: "FromContext",
+					Path: newrelicAgentImport,
 				},
 				Args: []dst.Expr{
 					&dst.CallExpr{
@@ -248,12 +238,9 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 		Tok: token.ASSIGN,
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
-				Fun: &dst.SelectorExpr{
-					X: &dst.Ident{
-						Name: "newrelic",
-						Path: newrelicAgentImport,
-					},
-					Sel: dst.NewIdent("NewRoundTripper"),
+				Fun: &dst.Ident{
+					Name: "NewRoundTripper",
+					Path: newrelicAgentImport,
 				},
 				Args: []dst.Expr{
 					&dst.SelectorExpr{
@@ -347,12 +334,9 @@ func startExternalSegment(request dst.Expr, txnVar, segmentVar string, nodeDecs 
 		},
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
-				Fun: &dst.SelectorExpr{
-					X: &dst.Ident{
-						Name: "newrelic",
-						Path: newrelicAgentImport,
-					},
-					Sel: dst.NewIdent("StartExternalSegment"),
+				Fun: &dst.Ident{
+					Name: "StartExternalSegment",
+					Path: newrelicAgentImport,
 				},
 				Args: []dst.Expr{
 					dst.NewIdent(txnVar),
@@ -421,12 +405,9 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeD
 		Lhs: []dst.Expr{dst.Clone(request).(dst.Expr)},
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
-				Fun: &dst.SelectorExpr{
-					X: &dst.Ident{
-						Name: "newrelic",
-						Path: newrelicAgentImport,
-					},
-					Sel: dst.NewIdent("RequestWithTransactionContext"),
+				Fun: &dst.Ident{
+					Name: "RequestWithTransactionContext",
+					Path: newrelicAgentImport,
 				},
 				Args: []dst.Expr{
 					dst.Clone(request).(dst.Expr),
@@ -513,14 +494,9 @@ func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *ds
 					oldArgs := callExpr.Args
 					callExpr.Args = []dst.Expr{
 						&dst.CallExpr{
-							Fun: &dst.SelectorExpr{
-								X: &dst.Ident{
-									Name: "newrelic",
-									Path: newrelicAgentImport,
-								},
-								Sel: &dst.Ident{
-									Name: "WrapHandleFunc",
-								},
+							Fun: &dst.Ident{
+								Name: "WrapHandleFunc",
+								Path: newrelicAgentImport,
 							},
 							Args: []dst.Expr{
 								&dst.CallExpr{
