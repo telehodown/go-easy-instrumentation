@@ -66,6 +66,8 @@ func createDiffFile(path string) {
 }
 
 func main() {
+	cfg := NewCLIConfig()
+
 	// check if ran with -default fladg
 	isDefault := false
 	for _, arg := range os.Args {
@@ -73,8 +75,6 @@ func main() {
 			isDefault = true
 		}
 	}
-
-	cfg := NewCLIConfig()
 
 	if !isDefault {
 		CLISplash()

@@ -10,7 +10,6 @@ import (
 // Default Values
 const (
 	defaultAgentVariableName = "NewRelicAgent"
-	defaultAppName           = "AST Example"
 	defaultPackageName       = "."
 	defaultPackagePath       = "../demo-app"
 )
@@ -46,7 +45,6 @@ func NewCLIConfig() *CLIConfig {
 	return &CLIConfig{
 		PackagePath:       defaultPackagePath,
 		PackageName:       defaultPackageName,
-		AppName:           defaultAppName,
 		AgentVariableName: defaultAgentVariableName,
 		DiffFile:          diffFile,
 	}
@@ -56,12 +54,11 @@ func (cfg *CLIConfig) CLIPrompts() {
 
 	cfg.PackagePath = defaultPackagePath
 	cfg.PackageName = defaultPackageName
-	cfg.AppName = defaultAppName
 	cfg.AgentVariableName = defaultAgentVariableName
 
 	// Prompt user to enter the path to the package they want to instrument
 	var packagePathPrompt string
-	fmt.Printf("Enter the path to the package you want to instrument (default if left blank: '%s'): ", defaultPackagePath)
+	fmt.Printf("Enter the path to the application you want to instrument (default: '%s'): ", defaultPackagePath)
 	fmt.Scanln(&packagePathPrompt)
 
 	if packagePathPrompt != "" {
@@ -87,12 +84,12 @@ func (cfg *CLIConfig) CLIPrompts() {
 	//	packageName = defaultPackageName
 	// }
 	// Prompt user to enter the application name
-	fmt.Printf("Override Application Name? Y/N (default: '%s'): ", defaultAppName)
+	fmt.Printf("Override the New Relic application name? Y/N: ")
 	userPrompt := ""
 	fmt.Scanln(&userPrompt)
 
 	if userPrompt == "Y" || userPrompt == "y" {
-		fmt.Printf("Enter the application name:")
+		fmt.Printf("Enter the application name: ")
 		var userAppName string
 		fmt.Scanln(&userAppName)
 		if userAppName != "" {

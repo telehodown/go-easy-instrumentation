@@ -47,7 +47,29 @@ func panicOnError() *dst.IfStmt {
 }
 
 func createAgentAST(AppName, AgentVariableName string) []dst.Stmt {
-	AppName = "\"" + AppName + "\""
+	newappArgs := []dst.Expr{
+		&dst.CallExpr{
+			Fun: &dst.Ident{
+				Path: newrelicAgentImport,
+				Name: "ConfigFromEnvironment",
+			},
+		},
+	}
+	if AppName != "" {
+		AppName = "\"" + AppName + "\""
+		newappArgs = append([]dst.Expr{&dst.CallExpr{
+			Fun: &dst.Ident{
+				Path: newrelicAgentImport,
+				Name: "ConfigAppName",
+			},
+			Args: []dst.Expr{
+				&dst.BasicLit{
+					Kind:  token.STRING,
+					Value: AppName,
+				},
+			},
+		}}, newappArgs...)
+	}
 
 	agentInit := &dst.AssignStmt{
 		Lhs: []dst.Expr{
@@ -61,45 +83,11 @@ func createAgentAST(AppName, AgentVariableName string) []dst.Stmt {
 		Tok: token.DEFINE,
 		Rhs: []dst.Expr{
 			&dst.CallExpr{
-				Fun: &dst.SelectorExpr{
-					X: &dst.Ident{
-						Name: "newrelic",
-						Path: newrelicAgentImport,
-					},
-					Sel: &dst.Ident{
-						Name: "NewApplication",
-					},
+				Fun: &dst.Ident{
+					Name: "NewApplication",
+					Path: newrelicAgentImport,
 				},
-				Args: []dst.Expr{
-					&dst.CallExpr{
-						Fun: &dst.SelectorExpr{
-							X: &dst.Ident{
-								Name: "newrelic",
-								Path: newrelicAgentImport,
-							},
-							Sel: &dst.Ident{
-								Name: "ConfigAppName",
-							},
-						},
-						Args: []dst.Expr{
-							&dst.BasicLit{
-								Kind:  token.STRING,
-								Value: AppName,
-							},
-						},
-					},
-					&dst.CallExpr{
-						Fun: &dst.SelectorExpr{
-							X: &dst.Ident{
-								Name: "newrelic",
-								Path: newrelicAgentImport,
-							},
-							Sel: &dst.Ident{
-								Name: "ConfigFromEnvironment",
-							},
-						},
-					},
-				},
+				Args: newappArgs,
 			},
 		},
 	}
@@ -292,20 +280,22 @@ func isNamedError(n *types.Named) bool {
 }
 
 func errorReturns(v *dst.CallExpr, pkg *decorator.Package) (int, bool) {
-	astCall := pkg.Decorator.Ast.Nodes[v].(*ast.CallExpr)
-	ty := pkg.TypesInfo.TypeOf(astCall)
-	switch n := ty.(type) {
-	case *types.Named:
-		if isNamedError(n) {
-			return 0, true
-		}
-	case *types.Tuple:
-		for i := 0; i < n.Len(); i++ {
-			t := n.At(i).Type()
-			switch e := t.(type) {
-			case *types.Named:
-				if isNamedError(e) {
-					return i, true
+	astCall, ok := pkg.Decorator.Ast.Nodes[v]
+	if ok {
+		ty := pkg.TypesInfo.TypeOf(astCall.(*ast.CallExpr))
+		switch n := ty.(type) {
+		case *types.Named:
+			if isNamedError(n) {
+				return 0, true
+			}
+		case *types.Tuple:
+			for i := 0; i < n.Len(); i++ {
+				t := n.At(i).Type()
+				switch e := t.(type) {
+				case *types.Named:
+					if isNamedError(e) {
+						return i, true
+					}
 				}
 			}
 		}
