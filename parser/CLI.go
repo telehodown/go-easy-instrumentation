@@ -15,6 +15,7 @@ const (
 	defaultAgentVariableName = "NewRelicAgent"
 	defaultPackageName       = "."
 	defaultPackagePath       = "../demo-app"
+	defaultDiffFileName      = "new-relic-instrumentation.diff"
 )
 
 type CLIConfig struct {
@@ -30,10 +31,10 @@ func CLISplash() {
 	cmd.Stdout = os.Stdout
 	cmd.Run()
 
-	fmt.Printf("New Relic Go Agent Pre Instrumentation Tool (Pre-Alpha)\n")
+	fmt.Printf("New Relic Go Agent Assisted Instrumentation Alpha\n")
 	fmt.Printf("-------------------------------------------------------\n")
-	fmt.Printf("This tool will instrument your Go application with the New Relic Go Agent\n")
-	fmt.Printf("And generate a diff file to show the changes made to your code\n")
+	fmt.Printf("This tool will generate a diff file containing changes that\n")
+	fmt.Printf("instrument your Go application with the New Relic Go Agent\n")
 	fmt.Printf("-------------------------------------------------------\n")
 	fmt.Printf("\n")
 	fmt.Printf("\n")
@@ -121,24 +122,22 @@ func (cfg *CLIConfig) CLIPrompts() {
 
 		fmt.Printf("\tThe diff file will be written in the directory: \"%s\"\n", diffDirectory)
 
-		fmt.Printf("What woud you like to name your diff file: ")
+		fmt.Printf("What woud you like to name your diff file (default: \"%s\"): ", defaultDiffFileName)
 		diffFileName := ""
 		fmt.Scanln(&diffFileName)
-
 		diffFileName = strings.TrimSpace(diffFileName)
 		if diffFileName == "" {
-			diffFileName = "new-relic-instrumentation.diff"
-		} else {
-			ext := filepath.Ext(diffFileName)
-			if ext == "" {
-				diffFileName = diffFileName + ".diff"
-			} else if ext != ".diff" {
-				fmt.Println(ext)
-				diffFileName = strings.TrimSuffix(diffFileName, ext) + ".diff"
-			}
-			cfg.DiffFile = filepath.Join(diffDirectory, diffFileName)
+			diffFileName = defaultDiffFileName
 		}
 
+		ext := filepath.Ext(diffFileName)
+		if ext == "" {
+			diffFileName = diffFileName + ".diff"
+		} else if ext != ".diff" {
+			fmt.Println(ext)
+			diffFileName = strings.TrimSuffix(diffFileName, ext) + ".diff"
+		}
+		cfg.DiffFile = filepath.Join(diffDirectory, diffFileName)
 	}
 
 	fmt.Printf("\tThe diff file will be written at: \"%s\"\n", cfg.DiffFile)
