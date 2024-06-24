@@ -73,7 +73,7 @@ func (cfg *CLIConfig) CLIPrompts() {
 
 		}
 	}
-	fmt.Printf("\tThis tool will generate instrumentation for: %s\n", cfg.PackagePath)
+	fmt.Printf(" > instrumentation will be generated for the application: \"%s\"\n", cfg.PackagePath)
 
 	// Prompt user to enter the package name
 	// fmt.Printf("Enter the package name (default: '%s'):", defaultPackageName)
@@ -103,7 +103,7 @@ func (cfg *CLIConfig) CLIPrompts() {
 	userPrompt = ""
 	fmt.Scanln(&userPrompt)
 	if userPrompt == "Y" || userPrompt == "y" {
-		fmt.Printf("What directory will the diff file be written to: ")
+		fmt.Printf("What directory will the diff file be written to (default: working directory): ")
 		diffDirectory := ""
 		fmt.Scanln(&diffDirectory)
 		diffDirectory = strings.TrimSpace(diffDirectory)
@@ -116,7 +116,7 @@ func (cfg *CLIConfig) CLIPrompts() {
 			log.Fatalf("the path \"%s\" could not be found: %v", diffDirectory, err)
 		}
 
-		fmt.Printf("\tthe diff file will be written in the directory: \"%s\"\n", diffDirectory)
+		fmt.Printf(" > the diff file will be written in the directory: \"%s\"\n", diffDirectory)
 
 		fmt.Printf("What would you like to name your diff file (default: \"%s\"): ", defaultDiffFileName)
 		diffFileName := ""
@@ -136,5 +136,5 @@ func (cfg *CLIConfig) CLIPrompts() {
 		cfg.DiffFile = filepath.Join(diffDirectory, diffFileName)
 	}
 
-	fmt.Printf("\tthe diff file will be written at: \"%s\"\n", cfg.DiffFile)
+	fmt.Printf(" > the diff file will be written at: \"%s\"\n", cfg.DiffFile)
 }
