@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
+	"strings"
 )
 
 // Default Values
@@ -55,7 +58,7 @@ func (cfg *CLIConfig) CLIPrompts() {
 	cfg.PackagePath = defaultPackagePath
 	cfg.PackageName = defaultPackageName
 	cfg.AgentVariableName = defaultAgentVariableName
-
+	wd, _ := os.Getwd()
 	// Prompt user to enter the path to the package they want to instrument
 	var packagePathPrompt string
 	fmt.Printf("Enter the path to the application you want to instrument (default: '%s'): ", defaultPackagePath)
@@ -68,13 +71,12 @@ func (cfg *CLIConfig) CLIPrompts() {
 			os.Exit(1)
 		} else {
 			// Set new path and update diff file name
-			cfg.PackagePath = packagePathPrompt
-			wd, _ := os.Getwd()
-			diffFileLocation := wd
-			cfg.DiffFile = fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(cfg.PackagePath))
+			cfg.PackagePath = strings.TrimSpace(packagePathPrompt)
+			cfg.DiffFile = fmt.Sprintf("%s/%s.diff", wd, path.Base(cfg.PackagePath))
 
 		}
 	}
+	fmt.Printf("\tThis tool will generate instrumentation for: %s\n", cfg.PackagePath)
 
 	// Prompt user to enter the package name
 	// fmt.Printf("Enter the package name (default: '%s'):", defaultPackageName)
@@ -93,18 +95,51 @@ func (cfg *CLIConfig) CLIPrompts() {
 		var userAppName string
 		fmt.Scanln(&userAppName)
 		if userAppName != "" {
+			userAppName = strings.TrimSpace(userAppName)
 			cfg.AppName = userAppName
 		}
 	}
 
 	// Prompt user to enter the diff file output location
-	// fmt.Printf("Enter the diff file output location (default: '%s/'):", diffFileLocation)
-	// fmt.Scanln(&diffFileLocation)
+	localFile, _ := filepath.Rel(wd, cfg.DiffFile)
+	fmt.Printf("Would you like to change the location of the diff file (default: \"%s\")? Y/N: ", localFile)
+	userPrompt = ""
+	fmt.Scanln(&userPrompt)
+	if userPrompt == "Y" || userPrompt == "y" {
+		fmt.Printf("What directory will the diff file be written to: ")
+		diffDirectory := ""
+		fmt.Scanln(&diffDirectory)
+		diffDirectory = strings.TrimSpace(diffDirectory)
+		if diffDirectory == "" {
+			diffDirectory = wd
+		}
 
-	// if diffFileLocation == "" {
-	// Set default diff file output location
-	// wd, _ := os.Getwd()
-	// diffFileLocation = wd
+		_, err := os.Stat(diffDirectory)
+		if err != nil {
+			log.Fatalf("The path \"%s\" could not be found: %v", diffDirectory, err)
+		}
 
-	// }
+		fmt.Printf("\tThe diff file will be written in the directory: \"%s\"\n", diffDirectory)
+
+		fmt.Printf("What woud you like to name your diff file: ")
+		diffFileName := ""
+		fmt.Scanln(&diffFileName)
+
+		diffFileName = strings.TrimSpace(diffFileName)
+		if diffFileName == "" {
+			diffFileName = "new-relic-instrumentation.diff"
+		} else {
+			ext := filepath.Ext(diffFileName)
+			if ext == "" {
+				diffFileName = diffFileName + ".diff"
+			} else if ext != ".diff" {
+				fmt.Println(ext)
+				diffFileName = strings.TrimSuffix(diffFileName, ext) + ".diff"
+			}
+			cfg.DiffFile = filepath.Join(diffDirectory, diffFileName)
+		}
+
+	}
+
+	fmt.Printf("\tThe diff file will be written at: \"%s\"\n", cfg.DiffFile)
 }
