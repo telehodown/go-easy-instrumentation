@@ -88,7 +88,7 @@ func (cfg *CLIConfig) CLIPrompts() {
 	fmt.Scanln(&userPrompt)
 
 	if userPrompt == "Y" || userPrompt == "y" {
-		fmt.Printf("Enter the application name: ")
+		fmt.Printf("What do you want to name the New Relic application: ")
 		var userAppName string
 		fmt.Scanln(&userAppName)
 		if userAppName != "" {
@@ -113,12 +113,12 @@ func (cfg *CLIConfig) CLIPrompts() {
 
 		_, err := os.Stat(diffDirectory)
 		if err != nil {
-			log.Fatalf("The path \"%s\" could not be found: %v", diffDirectory, err)
+			log.Fatalf("the path \"%s\" could not be found: %v", diffDirectory, err)
 		}
 
-		fmt.Printf("\tThe diff file will be written in the directory: \"%s\"\n", diffDirectory)
+		fmt.Printf("\tthe diff file will be written in the directory: \"%s\"\n", diffDirectory)
 
-		fmt.Printf("What woud you like to name your diff file (default: \"%s\"): ", defaultDiffFileName)
+		fmt.Printf("What would you like to name your diff file (default: \"%s\"): ", defaultDiffFileName)
 		diffFileName := ""
 		fmt.Scanln(&diffFileName)
 		diffFileName = strings.TrimSpace(diffFileName)
@@ -136,5 +136,5 @@ func (cfg *CLIConfig) CLIPrompts() {
 		cfg.DiffFile = filepath.Join(diffDirectory, diffFileName)
 	}
 
-	fmt.Printf("\tThe diff file will be written at: \"%s\"\n", cfg.DiffFile)
+	fmt.Printf("\tthe diff file will be written at: \"%s\"\n", cfg.DiffFile)
 }
