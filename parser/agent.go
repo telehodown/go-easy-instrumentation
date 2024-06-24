@@ -113,14 +113,9 @@ func shutdownAgent(AgentVariableName string) *dst.ExprStmt {
 						Value: "5",
 					},
 					Op: token.MUL,
-					Y: &dst.SelectorExpr{
-						X: &dst.Ident{
-							Name: "time",
-							Path: "time",
-						},
-						Sel: &dst.Ident{
-							Name: "Second",
-						},
+					Y: &dst.Ident{
+						Name: "Second",
+						Path: "time",
 					},
 				},
 			},
