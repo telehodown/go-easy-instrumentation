@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -27,15 +26,12 @@ type CLIConfig struct {
 }
 
 func CLISplash() {
-	cmd := exec.Command("clear")
-	cmd.Stdout = os.Stdout
-	cmd.Run()
-
-	fmt.Printf("New Relic Go Agent Assisted Instrumentation Alpha\n")
-	fmt.Printf("-------------------------------------------------------\n")
+	fmt.Printf("\n")
+	fmt.Printf("      New Relic Go Agent Assisted Instrumentation Alpha\n")
+	fmt.Printf("--------------------------------------------------------------\n")
 	fmt.Printf("This tool will generate a diff file containing changes that\n")
 	fmt.Printf("instrument your Go application with the New Relic Go Agent\n")
-	fmt.Printf("-------------------------------------------------------\n")
+	fmt.Printf("--------------------------------------------------------------\n")
 	fmt.Printf("\n")
 	fmt.Printf("\n")
 
