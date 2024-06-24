@@ -224,11 +224,9 @@ func txnAsParameter(txnName string) *dst.Field {
 			},
 		},
 		Type: &dst.StarExpr{
-			X: &dst.SelectorExpr{
-				Sel: &dst.Ident{
-					Name: "Transaction",
-					Path: newrelicAgentImport,
-				},
+			X: &dst.Ident{
+				Name: "Transaction",
+				Path: newrelicAgentImport,
 			},
 		},
 	}
@@ -260,11 +258,11 @@ func deferSegment(segmentName, txnVarName string) *dst.DeferStmt {
 	}
 }
 
-func txnNewGoroutine() *dst.CallExpr {
+func txnNewGoroutine(txnVarName string) *dst.CallExpr {
 	return &dst.CallExpr{
 		Fun: &dst.SelectorExpr{
 			X: &dst.Ident{
-				Name: "txn",
+				Name: txnVarName,
 			},
 			Sel: &dst.Ident{
 				Name: "NewGoroutine",
@@ -393,7 +391,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 			case *dst.FuncLit:
 				// Add threaded txn to function arguments and parameters
 				fun.Type.Params.List = append(fun.Type.Params.List, txnAsParameter(txnVarName))
-				v.Call.Args = append(v.Call.Args, txnNewGoroutine())
+				v.Call.Args = append(v.Call.Args, txnNewGoroutine(txnVarName))
 				// add go-agent/v3/newrelic to imports
 				data.AddImport(newrelicAgentImport)
 
@@ -411,7 +409,7 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", fnName), txnVarName)}, decl.Body.List...)
 				}
 				if data.RequiresTransactionArgument(fnName) {
-					call.Args = append(call.Args, dst.NewIdent(txnVarName))
+					call.Args = append(call.Args, txnNewGoroutine(txnVarName))
 					c.Replace(v)
 					TopLevelFunctionChanged = true
 				}
