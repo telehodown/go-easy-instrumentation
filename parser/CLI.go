@@ -66,13 +66,11 @@ func (cfg *CLIConfig) CLIPrompts() {
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 			os.Exit(1)
-		} else {
-			// Set new path and update diff file name
-			cfg.PackagePath = strings.TrimSpace(packagePathPrompt)
-			cfg.DiffFile = fmt.Sprintf("%s/%s.diff", wd, path.Base(cfg.PackagePath))
-
 		}
+		// Set new path and update diff file name
+		cfg.PackagePath = strings.TrimSpace(packagePathPrompt)
 	}
+	cfg.DiffFile = filepath.Join(cfg.PackagePath, defaultDiffFileName)
 	fmt.Printf(" > instrumentation will be generated for the application: \"%s\"\n", cfg.PackagePath)
 
 	// Prompt user to enter the package name
