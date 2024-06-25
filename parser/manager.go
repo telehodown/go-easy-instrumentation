@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -190,8 +192,18 @@ func (d *InstrumentationManager) WriteDiff() {
 	r := decorator.NewRestorerWithImports(d.pkg.Dir, gopackages.New(d.pkg.Dir))
 
 	for _, file := range d.pkg.Syntax {
-		fName := d.pkg.Decorator.Filenames[file]
-		originalFile, err := os.ReadFile(fName)
+		path := d.pkg.Decorator.Filenames[file]
+		originalFile, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		basePath := strings.Split(path, d.pkg.ID)
+		if len(basePath) == 0 {
+			log.Fatalf("Could not find base path for file %s", path)
+		}
+
+		diffFileName, err := filepath.Rel(basePath[0], path)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -206,7 +218,7 @@ func (d *InstrumentationManager) WriteDiff() {
 			log.Println(err)
 		}
 		defer f.Close()
-		patch := godiffpatch.GeneratePatch(fName[1:], string(originalFile), modifiedFile.String())
+		patch := godiffpatch.GeneratePatch(diffFileName, string(originalFile), modifiedFile.String())
 		if _, err := f.WriteString(patch); err != nil {
 			log.Println(err)
 		}
