@@ -128,7 +128,6 @@ func (cfg *CLIConfig) CLIPrompts() {
 		if ext == "" {
 			diffFileName = diffFileName + ".diff"
 		} else if ext != ".diff" {
-			fmt.Println(ext)
 			diffFileName = strings.TrimSuffix(diffFileName, ext) + ".diff"
 		}
 		cfg.DiffFile = filepath.Join(diffDirectory, diffFileName)
