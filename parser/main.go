@@ -13,6 +13,7 @@ import (
 // InstrumentationFunc is a type that is invoked on a function declaration
 type InstrumentationFunc func(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 
+// apply instrumentation to the package
 func instrumentPackage(data *InstrumentationManager, instrumentationFunctions ...InstrumentationFunc) {
 	for _, file := range data.pkg.Syntax {
 		for _, d := range file.Decls {
@@ -41,11 +42,24 @@ func tracePackageFunctionCalls(data *InstrumentationManager) {
 	}
 }
 
+func discoveredMain(data *InstrumentationManager) bool {
+	for _, fn := range data.tracedFuncs {
+		if fn.body.Name.Name == "main" {
+			return true
+		}
+	}
+	return false
+}
+
 func InstrumentPackage(pkg *decorator.Package, appName, agentVariableName, diffFile string) {
 	data := NewInstrumentationManager(pkg, appName, agentVariableName, diffFile)
 
 	// Create a call graph of all calls made to functions in this package
 	tracePackageFunctionCalls(data)
+
+	if !discoveredMain(data) {
+		log.Fatalf("Could not find main function in package %s; this application can not be instrumented", pkg.PkgPath)
+	}
 
 	// Instrumentation Steps
 	// 	- import the agent
