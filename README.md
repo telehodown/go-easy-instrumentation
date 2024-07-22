@@ -10,6 +10,8 @@ Since this is an early proof of concept, the scope of what it tries to instrumen
  - Capturing errors in any function wrapped or traced by a transaction
  - Tracing locally defined functions that are invoked in the application's main() method with a transaction
  - Tracing async functions and function literals with an async segment
+ - Wrapping HTTP handlers
+ - Injecting distributed tracing into external traffic
 
 **ONLY** the following Go packages and libraries are supported right now:
   - standard library
