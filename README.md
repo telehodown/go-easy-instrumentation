@@ -6,7 +6,7 @@ Go is a compiled language with an opaque runtime, making it unable to support au
 ## Alpha Preview Notice
 This is an early pre-release preview of the Assisted Instrumentation product. As such, it is still under active development. We appreciate any feedback you may have about any issues you find as you explore this tool.
 
-Since this is an early proof of concept, the scope of what it tries to instrument in your application is limited to the listed features:
+The scope of what this tool can instrument in your application is limited to the listed features:
  - Capturing errors in any function wrapped or traced by a transaction
  - Tracing locally defined functions that are invoked in the application's main() method with a transaction
  - Tracing async functions and function literals with an async segment
