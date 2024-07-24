@@ -186,9 +186,12 @@ func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl
 			},
 		},
 	})
-	data, ok := m.packages[m.currentPackage].tracedFuncs[functionName]
+	state, ok := m.packages[m.currentPackage]
 	if ok {
-		data.requiresTxn = true
+		fn, ok := state.tracedFuncs[functionName]
+		if ok {
+			fn.requiresTxn = true
+		}
 	}
 }
 
@@ -296,27 +299,27 @@ func (m *InstrumentationManager) AddRequiredModules() {
 	}
 }
 
-func (data *InstrumentationManager) InstrumentPackages() error {
+func (m *InstrumentationManager) InstrumentPackages() error {
 	// Create a call graph of all calls made to functions in this package
-	err := tracePackageFunctionCalls(data)
+	err := tracePackageFunctionCalls(m)
 	if err != nil {
 		return err
 	}
 
-	instrumentPackages(data, InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
+	instrumentPackages(m, InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
 
 	return nil
 }
 
 // traceFunctionCalls discovers and sets up tracing for all function calls in the current package
-func tracePackageFunctionCalls(data *InstrumentationManager) error {
+func tracePackageFunctionCalls(manager *InstrumentationManager) error {
 	hasMain := false
-	for packageName, pkg := range data.packages {
-		data.SetPackage(packageName)
+	for packageName, pkg := range manager.packages {
+		manager.SetPackage(packageName)
 		for _, file := range pkg.pkg.Syntax {
 			for _, decl := range file.Decls {
 				if fn, isFn := decl.(*dst.FuncDecl); isFn {
-					data.CreateFunctionDeclaration(fn)
+					manager.CreateFunctionDeclaration(fn)
 					if fn.Name.Name == "main" {
 						hasMain = true
 					}
@@ -332,19 +335,19 @@ func tracePackageFunctionCalls(data *InstrumentationManager) error {
 }
 
 // InstrumentationFunc is a type that is invoked on a function declaration
-type InstrumentationFunc func(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
+type InstrumentationFunc func(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor)
 
 // apply instrumentation to the package
-func instrumentPackages(data *InstrumentationManager, instrumentationFunctions ...InstrumentationFunc) {
-	for pkgName, pkgState := range data.packages {
-		data.SetPackage(pkgName)
+func instrumentPackages(manager *InstrumentationManager, instrumentationFunctions ...InstrumentationFunc) {
+	for pkgName, pkgState := range manager.packages {
+		manager.SetPackage(pkgName)
 		for _, file := range pkgState.pkg.Syntax {
 			for _, decl := range file.Decls {
 				if fn, isFn := decl.(*dst.FuncDecl); isFn {
 					dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
 						n := c.Node()
 						for _, instFunc := range instrumentationFunctions {
-							instFunc(n, data, c)
+							instFunc(n, manager, c)
 						}
 						return true
 					})
