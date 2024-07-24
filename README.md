@@ -3,8 +3,8 @@
 # Go Agent Assisted Instrumentation
 Go is a compiled language with an opaque runtime, making it unable to support automatic instrumentation the way other languages are, which is why the New Relic Go Agent is designed as an SDK. That makes installing and getting the most out of the Go Agent something that requires much more upfront investment than other language agents. To address this, the Go Agent team created the Go Agent Assisted Instrumentation tool, which will do most of the instrumentation work for you by generating changes to your source code that instruments your application with the New Relic Go Agent.
 
-## Alpha Preview Notice
-This is an early pre-release preview of the Assisted Instrumentation product. As such, it is still under active development. We appreciate any feedback you may have about any issues you find as you explore this tool.
+## Limited Preview Notice
+This is a limited preview of the Assisted Instrumentation product. As such, it is still under active development. We appreciate any feedback you may have about any issues you find as you explore this tool.
 
 The scope of what this tool can instrument in your application is limited to the listed features:
  - Capturing errors in any function wrapped or traced by a transaction
