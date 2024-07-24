@@ -181,9 +181,11 @@ func InstrumentMain(mainFunctionNode dst.Node, data *InstrumentationManager, c *
 				node := c.Node()
 				switch v := node.(type) {
 				case *dst.ExprStmt:
-					fnName, call := data.GetPackageFunctionInvocation(v)
+					rootPkg := data.currentPackage
+					fnName, pkgName, call := data.GetPackageFunctionInvocation(v)
 					// check if the called function has been instrumented already, if not, instrument it.
-					if data.ShouldInstrumentFunction(fnName) {
+					if data.ShouldInstrumentFunction(fnName, pkgName) {
+						data.SetPackage(pkgName)
 						decl := data.GetDeclaration(fnName)
 						_, wasModified := TraceFunction(data, decl, defaultTxnName)
 						if wasModified {
@@ -191,6 +193,7 @@ func InstrumentMain(mainFunctionNode dst.Node, data *InstrumentationManager, c *
 							data.AddTxnArgumentToFunctionDecl(decl, defaultTxnName, fnName)
 							data.AddImport(newrelicAgentImport)
 						}
+						data.SetPackage(rootPkg)
 					}
 					// pass the called function a transaction if needed
 					if data.RequiresTransactionArgument(fnName) {
@@ -363,7 +366,7 @@ var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction,
 func NoticeError(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
 	switch nodeVal := stmt.(type) {
 	case *dst.AssignStmt:
-		errVar := findErrorVariable(nodeVal, data.pkg)
+		errVar := findErrorVariable(nodeVal, data.GetDecoratorPackage())
 		if errVar != "" {
 			c.InsertAfter(txnNoticeError(errVar, txnName, nodeVal.Decorations()))
 			return true
@@ -395,23 +398,29 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 				c.Replace(v)
 				TopLevelFunctionChanged = true
 			default:
-				fnName, call := data.GetPackageFunctionInvocation(v.Call)
-				if data.ShouldInstrumentFunction(fnName) {
+				rootPkg := data.currentPackage
+				fnName, pkgName, call := data.GetPackageFunctionInvocation(v.Call)
+				if data.ShouldInstrumentFunction(fnName, pkgName) {
+					data.SetPackage(pkgName)
 					decl := data.GetDeclaration(fnName)
 					TraceFunction(data, decl, txnVarName)
 					data.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
 					data.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", fnName), txnVarName)}, decl.Body.List...)
+
 				}
 				if data.RequiresTransactionArgument(fnName) {
 					call.Args = append(call.Args, txnNewGoroutine(txnVarName))
 					c.Replace(v)
 					TopLevelFunctionChanged = true
 				}
+				data.SetPackage(rootPkg)
 			}
 		case dst.Stmt:
-			fnName, call := data.GetPackageFunctionInvocation(v)
-			if data.ShouldInstrumentFunction(fnName) {
+			rootPkg := data.currentPackage
+			fnName, pkgName, call := data.GetPackageFunctionInvocation(v)
+			if data.ShouldInstrumentFunction(fnName, pkgName) {
+				data.SetPackage(pkgName)
 				decl := data.GetDeclaration(fnName)
 				_, wasModified := TraceFunction(data, decl, txnVarName)
 				if wasModified {
@@ -419,11 +428,13 @@ func TraceFunction(data *InstrumentationManager, fn *dst.FuncDecl, txnVarName st
 					data.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fnName, txnVarName)}, decl.Body.List...)
 				}
+
 			}
 			if data.RequiresTransactionArgument(fnName) {
 				call.Args = append(call.Args, dst.NewIdent(txnVarName))
 				TopLevelFunctionChanged = true
 			}
+			data.SetPackage(rootPkg)
 			for _, stmtFunc := range tracingFuncs {
 				ok := stmtFunc(data, v, c, txnVarName)
 				if ok {

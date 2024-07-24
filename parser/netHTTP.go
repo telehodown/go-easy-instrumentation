@@ -109,7 +109,7 @@ func GetNetHttpMethod(n *dst.CallExpr, pkg *decorator.Package) string {
 func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		funcName := GetNetHttpMethod(callExpr, data.pkg)
+		funcName := GetNetHttpMethod(callExpr, data.GetDecoratorPackage())
 		switch funcName {
 		case HttpHandleFunc, HttpMuxHandle:
 			if len(callExpr.Args) == 2 {
@@ -176,34 +176,32 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 	fn.Body.List = stmts
 }
 
-func isHttpHandler(params []*dst.Field, data *InstrumentationManager) bool {
+func isHttpHandler(params []*dst.Field, pkg *decorator.Package) bool {
 	if len(params) == 2 {
 		var rw, req bool
 		for _, param := range params {
 			ident, ok := param.Type.(*dst.Ident)
 			star, okStar := param.Type.(*dst.StarExpr)
 			if ok {
-				astNode := data.pkg.Decorator.Ast.Nodes[ident]
+				astNode := pkg.Decorator.Ast.Nodes[ident]
 				astIdent, ok := astNode.(*ast.SelectorExpr)
 				if ok {
-					paramType := data.pkg.TypesInfo.Types[astIdent]
+					paramType := pkg.TypesInfo.Types[astIdent]
 					t := paramType.Type.String()
 					if t == "net/http.ResponseWriter" {
 						rw = true
 					}
-
 				}
 			} else if okStar {
-				astNode := data.pkg.Decorator.Ast.Nodes[star]
+				astNode := pkg.Decorator.Ast.Nodes[star]
 				astStar, ok := astNode.(*ast.StarExpr)
 				if ok {
-					paramType := data.pkg.TypesInfo.Types[astStar]
+					paramType := pkg.TypesInfo.Types[astStar]
 					t := paramType.Type.String()
 					if t == "*net/http.Request" {
 						req = true
 					}
 				}
-
 			}
 		}
 		return rw && req
@@ -216,7 +214,7 @@ func isHttpHandler(params []*dst.Field, data *InstrumentationManager) bool {
 // down the call chain of the function it is invoked on.
 func InstrumentHandleFunction(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	fn, isFn := n.(*dst.FuncDecl)
-	if isFn && isHttpHandler(fn.Type.Params.List, data) {
+	if isFn && isHttpHandler(fn.Type.Params.List, data.GetDecoratorPackage()) {
 		txnName := "nrTxn"
 		newFn, ok := TraceFunction(data, fn, txnName)
 		if ok {
@@ -261,12 +259,13 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 // InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
 func InstrumentHttpClient(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
 	stmt, ok := n.(*dst.AssignStmt)
+	pkg := data.GetDecoratorPackage()
 	if ok && len(stmt.Lhs) == 1 {
 		clientVar := stmt.Lhs[0]
-		astClientVar := data.pkg.Decorator.Ast.Nodes[clientVar]
+		astClientVar := pkg.Decorator.Ast.Nodes[clientVar]
 		expr, ok := astClientVar.(ast.Expr)
 		if ok {
-			t := data.pkg.TypesInfo.TypeOf(expr).String()
+			t := pkg.TypesInfo.TypeOf(expr).String()
 			if t == HttpClientType {
 				// add new line that adds roundtripper to transports
 				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
@@ -294,16 +293,17 @@ func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 // CannotInstrumentHttpMethod is a function that discovers methods of net/http. If that function can not be penetrated by
 // instrumentation, it leaves a comment header warning the customer. This function needs no tracing context to work.
 func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+	pkg := data.GetDecoratorPackage()
 	switch v := n.(type) {
 	case *dst.AssignStmt, *dst.ExprStmt:
 		dst.Inspect(n, func(n dst.Node) bool {
 			c, ok := n.(*dst.CallExpr)
 			if ok {
-				funcName := GetNetHttpMethod(c, data.pkg)
+				funcName := GetNetHttpMethod(c, pkg)
 				switch funcName {
 				case HttpGet, HttpPost, HttpPostForm, HttpHead:
-					astCall := data.pkg.Decorator.Ast.Nodes[c].(*ast.CallExpr)
-					if data.pkg.TypesInfo.TypeOf(astCall).String() == "(resp *net/http.Response, err error)" {
+					astCall := pkg.Decorator.Ast.Nodes[c].(*ast.CallExpr)
+					if pkg.TypesInfo.TypeOf(astCall).String() == "(resp *net/http.Response, err error)" {
 						v.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, v.Decorations())...)
 					}
 				}
@@ -421,12 +421,13 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeD
 
 func getHttpResponseExpr(data *InstrumentationManager, stmt dst.Stmt) dst.Expr {
 	var expression dst.Expr
+	pkg := data.GetDecoratorPackage()
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.AssignStmt:
 			for _, expr := range v.Lhs {
-				astExpr := data.pkg.Decorator.Ast.Nodes[expr].(ast.Expr)
-				t := data.pkg.TypesInfo.TypeOf(astExpr).String()
+				astExpr := pkg.Decorator.Ast.Nodes[expr].(ast.Expr)
+				t := pkg.TypesInfo.TypeOf(astExpr).String()
 				if t == "*net/http.Response" {
 					expression = expr
 					return false
@@ -444,11 +445,12 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 	if c.Index() < 0 {
 		return false
 	}
+	pkg := data.GetDecoratorPackage()
 	var call *dst.CallExpr
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.CallExpr:
-			if GetNetHttpMethod(v, data.pkg) == HttpDo {
+			if GetNetHttpMethod(v, pkg) == HttpDo {
 				call = v
 				return false
 			}
@@ -456,7 +458,7 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 		return true
 	})
 	if call != nil {
-		clientVar := GetNetHttpClientVariableName(call, data.pkg)
+		clientVar := GetNetHttpClientVariableName(call, pkg)
 		requestObject := call.Args[0]
 		if clientVar == HttpDefaultClientVariable {
 			// create external segment to wrap calls made with default client
@@ -482,11 +484,12 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 // that are being traced by a transaction.
 func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
 	wasModified := false
+	pkg := data.GetDecoratorPackage()
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.CallExpr:
 			callExpr := v
-			funcName := GetNetHttpMethod(callExpr, data.pkg)
+			funcName := GetNetHttpMethod(callExpr, pkg)
 			switch funcName {
 			case HttpHandleFunc, HttpMuxHandle:
 				if len(callExpr.Args) == 2 {

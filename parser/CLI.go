@@ -13,7 +13,7 @@ import (
 // Default Values
 const (
 	defaultAgentVariableName = "NewRelicAgent"
-	defaultPackageName       = "."
+	defaultPackageName       = "./..."
 	defaultPackagePath       = "../demo-app"
 	defaultDiffFileName      = "new-relic-instrumentation.diff"
 )
