@@ -30,7 +30,7 @@ type tracedFunction struct {
 	body        *dst.FuncDecl
 }
 
-// InstrumentationManager maintains state relevant to tracing across all files and functions within a package.
+// InstrumentationManager maintains state relevant to tracing across all files, packages and functions.
 type InstrumentationManager struct {
 	diffFile          string
 	appName           string
@@ -334,11 +334,11 @@ func tracePackageFunctionCalls(manager *InstrumentationManager) error {
 	return nil
 }
 
-// InstrumentationFunc is a type that is invoked on a function declaration
-type InstrumentationFunc func(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor)
+// StatelessInstrumentationFunc is a function that does not need to be aware of the current tracing state of the package to apply instrumentation.
+type StatelessInstrumentationFunc func(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor)
 
 // apply instrumentation to the package
-func instrumentPackages(manager *InstrumentationManager, instrumentationFunctions ...InstrumentationFunc) {
+func instrumentPackages(manager *InstrumentationManager, instrumentationFunctions ...StatelessInstrumentationFunc) {
 	for pkgName, pkgState := range manager.packages {
 		manager.SetPackage(pkgName)
 		for _, file := range pkgState.pkg.Syntax {

@@ -356,9 +356,9 @@ func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
 	return ""
 }
 
-type TracingFunction func(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
+type StatefulTracingFunction func(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
 
-var tracingFuncs = []TracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
+var tracingFuncs = []StatefulTracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
 
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
