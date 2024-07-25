@@ -1,0 +1,169 @@
+--- a/demo-app/handlers.go
++++ b/demo-app/handlers.go
+@@ -7,6 +7,8 @@
+ 	"net/http"
+ 	"sync"
+ 	"time"
++
++	"github.com/newrelic/go-agent/v3/newrelic"
+ )
+ 
+ // the most basic http handler function
+@@ -24,7 +26,10 @@
+ }
+ 
+ func noticeError(w http.ResponseWriter, r *http.Request) {
++	nrTxn := newrelic.FromContext(r.Context())
++
+ 	str, _, err := DoAThing(true)
++	nrTxn.NoticeError(err)
+ 	if err != nil {
+ 		io.WriteString(w, err.Error())
+ 	} else {
+@@ -33,13 +37,20 @@
+ }
+ 
+ func external(w http.ResponseWriter, r *http.Request) {
++	nrTxn := newrelic.FromContext(r.Context())
++
+ 	req, err := http.NewRequest("GET", "https://example.com", nil)
++	nrTxn.NoticeError(err)
+ 	if err != nil {
+ 		log.Fatal(err)
+ 	}
+ 
+ 	// Make an http request to an external address
++	externalSegment := newrelic.StartExternalSegment(nrTxn, req)
+ 	resp, err := http.DefaultClient.Do(req)
++	nrTxn.NoticeError(err)
++	externalSegment.Response = resp
++	externalSegment.End()
+ 	if err != nil {
+ 		io.WriteString(w, err.Error())
+ 		return
+@@ -50,8 +54,15 @@
+ }
+ 
+ func basicExternal(w http.ResponseWriter, r *http.Request) {
++	nrTxn := newrelic.FromContext(r.Context())
++
++	// the "http.Get()" net/http method can not be instrumented and its outbound traffic can not be traced
++	// please see these examples of code patterns for external http calls that can be instrumented:
++	// https://docs.newrelic.com/docs/apm/agents/go-agent/configuration/distributed-tracing-go-agent/#make-http-requests
++	//
+ 	// Make an http request to an external address
+ 	resp, err := http.Get("https://example.com")
++	nrTxn.NoticeError(err)
+ 	if err != nil {
+ 		io.WriteString(w, err.Error())
+ 		return
+@@ -62,14 +71,20 @@
+ }
+ 
+ func roundtripper(w http.ResponseWriter, r *http.Request) {
++	nrTxn := newrelic.FromContext(r.Context())
++
+ 	client := &http.Client{}
++	client.Transport = newrelic.NewRoundTripper(client.Transport)
+ 
+ 	request, err := http.NewRequest("GET", "https://example.com", nil)
++	nrTxn.NoticeError(err)
+ 	if err != nil {
+ 		log.Fatal(err)
+ 	}
+ 
++	request = newrelic.RequestWithTransactionContext(request, nrTxn)
+ 	resp, err := client.Do(request)
++	nrTxn.NoticeError(err)
+ 
+ 	// this is an unusual spacing and comment pattern to test the decoration preservation
+ 	if err != nil {
+@@ -81,29 +88,39 @@
+ }
+ 
+ func async(w http.ResponseWriter, r *http.Request) {
++	nrTxn := newrelic.FromContext(r.Context())
++
+ 	wg := &sync.WaitGroup{}
+ 	wg.Add(1)
+-	go func() {
++	go func(nrTxn *newrelic.Transaction) {
++		defer nrTxn.StartSegment("async literal").End()
+ 		defer wg.Done()
+ 		time.Sleep(100 * time.Millisecond)
+-	}()
++	}(nrTxn.NewGoroutine())
+ 	wg.Wait()
+ 	w.Write([]byte("done!"))
+ }
+ 
+-func doAsyncThing(wg *sync.WaitGroup) {
++func doAsyncThing(wg *sync.WaitGroup, nrTxn *newrelic.Transaction) {
++	defer nrTxn.StartSegment("async doAsyncThing").End()
+ 	defer wg.Done()
+ 	time.Sleep(100 * time.Millisecond)
++	// the "http.Get()" net/http method can not be instrumented and its outbound traffic can not be traced
++	// please see these examples of code patterns for external http calls that can be instrumented:
++	// https://docs.newrelic.com/docs/apm/agents/go-agent/configuration/distributed-tracing-go-agent/#make-http-requests
+ 	_, err := http.Get("http://example.com")
++	nrTxn.NoticeError(err)
+ 	if err != nil {
+ 		log.Println(err)
+ 	}
+ }
+ 
+ func async2(w http.ResponseWriter, r *http.Request) {
++	nrTxn := newrelic.FromContext(r.Context())
++
+ 	wg := &sync.WaitGroup{}
+ 	wg.Add(1)
+-	go doAsyncThing(wg)
++	go doAsyncThing(wg, nrTxn.NewGoroutine())
+ 	wg.Wait()
+ 	w.Write([]byte("done!"))
+ }
+--- a/demo-app/main.go
++++ b/demo-app/main.go
+@@ -2,21 +2,33 @@
+ 
+ import (
+ 	"net/http"
++	"time"
++
++	"github.com/newrelic/go-agent/v3/newrelic"
+ )
+ 
+ // design pattern that forces awareness of call depth to pass instrumentation
+-func initHandlers() {
+-	http.HandleFunc("/", index)
+-	http.HandleFunc("/error", noticeError)
+-	http.HandleFunc("/external", external)
+-	http.HandleFunc("/roundtrip", roundtripper)
+-	http.HandleFunc("/basicExternal", basicExternal)
+-	http.HandleFunc("/async", async)
+-	http.HandleFunc("/async2", async2)
++func initHandlers(nrTxn *newrelic.Transaction) {
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/", index))
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/error", noticeError))
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/external", external))
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/roundtrip", roundtripper))
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/basicExternal", basicExternal))
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/async", async))
++	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/async2", async2))
+ }
+ 
+ func main() {
+-	initHandlers()
++	NewRelicAgent, err := newrelic.NewApplication(newrelic.ConfigAppName("demo app"), newrelic.ConfigFromEnvironment())
++	if err != nil {
++		panic(err)
++	}
++
++	nrTxn := NewRelicAgent.StartTransaction("initHandlers")
++	initHandlers(nrTxn)
++	nrTxn.End()
+ 	DoAThing(true)
+ 	http.ListenAndServe(":8000", nil)
++
++	NewRelicAgent.Shutdown(5 * time.Second)
+ }

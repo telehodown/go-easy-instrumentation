@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -42,16 +43,35 @@ func NewCLIConfig() *CLIConfig {
 	diffFileLocation := wd
 	diffFile := fmt.Sprintf("%s/%s.diff", diffFileLocation, path.Base(defaultPackagePath))
 
-	return &CLIConfig{
-		PackagePath:       defaultPackagePath,
-		PackageName:       defaultPackageName,
-		AgentVariableName: defaultAgentVariableName,
-		DiffFile:          diffFile,
+
+	var defaultFlag = flag.Bool("default", false, "use default values and don't prompt at runtime")
+	var packageFlag = flag.String("package", defaultPackageName, "package name to instrument")
+	var pathFlag = flag.String("path", defaultPackagePath, "path to package to instrument")
+	var appNameFlag = flag.String("name", "", "custom application name")
+	var diffFlag = flag.String("diff", diffFile, "output diff file path name")
+	var agentFlag = flag.String("agent", defaultAgentVariableName, "application variable for New Relic agent")
+	flag.Parse()
+
+	cfg := &CLIConfig{
+		PackagePath:       *pathFlag,
+		PackageName:       *packageFlag,
+		AgentVariableName: *agentFlag,
+		DiffFile:          *diffFlag,
+		AppName:		   *appNameFlag,
 	}
+
+	// if -default option is given, we're done.
+	// Otherwise, prompt interactively unless they changed any of the other values
+	if *defaultFlag || *packageFlag != defaultPackageName || *pathFlag != defaultPackagePath || *appNameFlag != "" || *diffFlag != diffFile || *agentFlag != defaultAgentVariableName {
+		return cfg
+	}
+
+	CLISplash()
+	cfg.CLIPrompts()
+	return cfg
 }
 
 func (cfg *CLIConfig) CLIPrompts() {
-
 	cfg.PackagePath = defaultPackagePath
 	cfg.PackageName = defaultPackageName
 	cfg.AgentVariableName = defaultAgentVariableName
