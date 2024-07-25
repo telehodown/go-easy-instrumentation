@@ -1,6 +1,7 @@
 package main
 
 import (
+	"demo-app/pkg"
 	"errors"
 	"io"
 	"log"
@@ -24,6 +25,12 @@ func DoAThing(willError bool) (string, bool, error) {
 }
 
 func noticeError(w http.ResponseWriter, r *http.Request) {
+	err := pkg.Service()
+	if err != nil {
+		io.WriteString(w, err.Error())
+		return
+	}
+
 	str, _, err := DoAThing(true)
 	if err != nil {
 		io.WriteString(w, err.Error())

@@ -106,10 +106,10 @@ func GetNetHttpMethod(n *dst.CallExpr, pkg *decorator.Package) string {
 }
 
 // WrapHandleFunc looks for an instance of http.HandleFunc() and wraps it with a new relic transaction
-func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+func WrapHandleFunc(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	callExpr, ok := n.(*dst.CallExpr)
 	if ok {
-		funcName := GetNetHttpMethod(callExpr, data.pkg)
+		funcName := GetNetHttpMethod(callExpr, manager.GetDecoratorPackage())
 		switch funcName {
 		case HttpHandleFunc, HttpMuxHandle:
 			if len(callExpr.Args) == 2 {
@@ -123,7 +123,7 @@ func WrapHandleFunc(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor)
 						},
 						Args: []dst.Expr{
 							&dst.Ident{
-								Name: data.agentVariableName,
+								Name: manager.agentVariableName,
 							},
 							oldArgs[0],
 							oldArgs[1],
@@ -176,34 +176,32 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 	fn.Body.List = stmts
 }
 
-func isHttpHandler(params []*dst.Field, data *InstrumentationManager) bool {
+func isHttpHandler(params []*dst.Field, pkg *decorator.Package) bool {
 	if len(params) == 2 {
 		var rw, req bool
 		for _, param := range params {
 			ident, ok := param.Type.(*dst.Ident)
 			star, okStar := param.Type.(*dst.StarExpr)
 			if ok {
-				astNode := data.pkg.Decorator.Ast.Nodes[ident]
+				astNode := pkg.Decorator.Ast.Nodes[ident]
 				astIdent, ok := astNode.(*ast.SelectorExpr)
 				if ok {
-					paramType := data.pkg.TypesInfo.Types[astIdent]
+					paramType := pkg.TypesInfo.Types[astIdent]
 					t := paramType.Type.String()
 					if t == "net/http.ResponseWriter" {
 						rw = true
 					}
-
 				}
 			} else if okStar {
-				astNode := data.pkg.Decorator.Ast.Nodes[star]
+				astNode := pkg.Decorator.Ast.Nodes[star]
 				astStar, ok := astNode.(*ast.StarExpr)
 				if ok {
-					paramType := data.pkg.TypesInfo.Types[astStar]
+					paramType := pkg.TypesInfo.Types[astStar]
 					t := paramType.Type.String()
 					if t == "*net/http.Request" {
 						req = true
 					}
 				}
-
 			}
 		}
 		return rw && req
@@ -214,15 +212,15 @@ func isHttpHandler(params []*dst.Field, data *InstrumentationManager) bool {
 // Recognize if a function is a handler func based on its contents, and inject instrumentation.
 // This function discovers entrypoints to tracing for a given transaction and should trace all the way
 // down the call chain of the function it is invoked on.
-func InstrumentHandleFunction(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+func InstrumentHandleFunction(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	fn, isFn := n.(*dst.FuncDecl)
-	if isFn && isHttpHandler(fn.Type.Params.List, data) {
+	if isFn && isHttpHandler(fn.Type.Params.List, manager.GetDecoratorPackage()) {
 		txnName := "nrTxn"
-		newFn, ok := TraceFunction(data, fn, txnName)
+		newFn, ok := TraceFunction(manager, fn, txnName)
 		if ok {
 			txnFromCtx(newFn, txnName)
 			c.Replace(newFn)
-			data.UpdateFunctionDeclaration(newFn)
+			manager.UpdateFunctionDeclaration(newFn)
 		}
 	}
 }
@@ -259,19 +257,20 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 }
 
 // InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
-func InstrumentHttpClient(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	stmt, ok := n.(*dst.AssignStmt)
+	pkg := manager.GetDecoratorPackage()
 	if ok && len(stmt.Lhs) == 1 {
 		clientVar := stmt.Lhs[0]
-		astClientVar := data.pkg.Decorator.Ast.Nodes[clientVar]
+		astClientVar := pkg.Decorator.Ast.Nodes[clientVar]
 		expr, ok := astClientVar.(ast.Expr)
 		if ok {
-			t := data.pkg.TypesInfo.TypeOf(expr).String()
+			t := pkg.TypesInfo.TypeOf(expr).String()
 			if t == HttpClientType {
 				// add new line that adds roundtripper to transports
 				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
 				stmt.Decs.After = dst.None
-				data.AddImport(newrelicAgentImport)
+				manager.AddImport(newrelicAgentImport)
 			}
 		}
 	}
@@ -293,17 +292,18 @@ func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 
 // CannotInstrumentHttpMethod is a function that discovers methods of net/http. If that function can not be penetrated by
 // instrumentation, it leaves a comment header warning the customer. This function needs no tracing context to work.
-func CannotInstrumentHttpMethod(n dst.Node, data *InstrumentationManager, c *dstutil.Cursor) {
+func CannotInstrumentHttpMethod(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
+	pkg := manager.GetDecoratorPackage()
 	switch v := n.(type) {
 	case *dst.AssignStmt, *dst.ExprStmt:
 		dst.Inspect(n, func(n dst.Node) bool {
 			c, ok := n.(*dst.CallExpr)
 			if ok {
-				funcName := GetNetHttpMethod(c, data.pkg)
+				funcName := GetNetHttpMethod(c, pkg)
 				switch funcName {
 				case HttpGet, HttpPost, HttpPostForm, HttpHead:
-					astCall := data.pkg.Decorator.Ast.Nodes[c].(*ast.CallExpr)
-					if data.pkg.TypesInfo.TypeOf(astCall).String() == "(resp *net/http.Response, err error)" {
+					astCall := pkg.Decorator.Ast.Nodes[c].(*ast.CallExpr)
+					if pkg.TypesInfo.TypeOf(astCall).String() == "(resp *net/http.Response, err error)" {
 						v.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, v.Decorations())...)
 					}
 				}
@@ -419,14 +419,15 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeD
 	}
 }
 
-func getHttpResponseExpr(data *InstrumentationManager, stmt dst.Stmt) dst.Expr {
+func getHttpResponseExpr(manager *InstrumentationManager, stmt dst.Stmt) dst.Expr {
 	var expression dst.Expr
+	pkg := manager.GetDecoratorPackage()
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.AssignStmt:
 			for _, expr := range v.Lhs {
-				astExpr := data.pkg.Decorator.Ast.Nodes[expr].(ast.Expr)
-				t := data.pkg.TypesInfo.TypeOf(astExpr).String()
+				astExpr := pkg.Decorator.Ast.Nodes[expr].(ast.Expr)
+				t := pkg.TypesInfo.TypeOf(astExpr).String()
 				if t == "*net/http.Response" {
 					expression = expr
 					return false
@@ -440,15 +441,16 @@ func getHttpResponseExpr(data *InstrumentationManager, stmt dst.Stmt) dst.Expr {
 
 // ExternalHttpCall finds and instruments external net/http calls to the method http.Do.
 // It returns a modified function body, and the number of lines that were added.
-func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+func ExternalHttpCall(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
 	if c.Index() < 0 {
 		return false
 	}
+	pkg := manager.GetDecoratorPackage()
 	var call *dst.CallExpr
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.CallExpr:
-			if GetNetHttpMethod(v, data.pkg) == HttpDo {
+			if GetNetHttpMethod(v, pkg) == HttpDo {
 				call = v
 				return false
 			}
@@ -456,22 +458,22 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 		return true
 	})
 	if call != nil {
-		clientVar := GetNetHttpClientVariableName(call, data.pkg)
+		clientVar := GetNetHttpClientVariableName(call, pkg)
 		requestObject := call.Args[0]
 		if clientVar == HttpDefaultClientVariable {
 			// create external segment to wrap calls made with default client
 			segmentName := "externalSegment"
 			c.InsertBefore(startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
 			c.InsertAfter(endExternalSegment(segmentName, stmt.Decorations()))
-			responseVar := getHttpResponseExpr(data, stmt)
-			data.AddImport(newrelicAgentImport)
+			responseVar := getHttpResponseExpr(manager, stmt)
+			manager.AddImport(newrelicAgentImport)
 			if responseVar != nil {
 				c.InsertAfter(captureHttpResponse(segmentName, responseVar))
 			}
 			return true
 		} else {
 			c.InsertBefore(addTxnToRequestContext(requestObject, txnName, stmt.Decorations()))
-			data.AddImport(newrelicAgentImport)
+			manager.AddImport(newrelicAgentImport)
 			return true
 		}
 	}
@@ -480,13 +482,14 @@ func ExternalHttpCall(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cu
 
 // WrapHandleFunction is a function that wraps net/http.HandeFunc() declarations inside of functions
 // that are being traced by a transaction.
-func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
+func WrapNestedHandleFunction(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, txnName string) bool {
 	wasModified := false
+	pkg := manager.GetDecoratorPackage()
 	dst.Inspect(stmt, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.CallExpr:
 			callExpr := v
-			funcName := GetNetHttpMethod(callExpr, data.pkg)
+			funcName := GetNetHttpMethod(callExpr, pkg)
 			switch funcName {
 			case HttpHandleFunc, HttpMuxHandle:
 				if len(callExpr.Args) == 2 {
@@ -511,7 +514,7 @@ func WrapNestedHandleFunction(data *InstrumentationManager, stmt dst.Stmt, c *ds
 						},
 					}
 					wasModified = true
-					data.AddImport(newrelicAgentImport)
+					manager.AddImport(newrelicAgentImport)
 					return false
 				}
 			}
