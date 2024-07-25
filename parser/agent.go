@@ -358,7 +358,7 @@ func findErrorVariable(stmt *dst.AssignStmt, pkg *decorator.Package) string {
 
 type StatefulTracingFunction func(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Cursor, tracingName string) bool
 
-var tracingFuncs = []StatefulTracingFunction{ExternalHttpCall, WrapNestedHandleFunction, NoticeError}
+var TracingFunctionsForSupportedPackages = []StatefulTracingFunction{ExternalHttpCall, WrapNestedHandleFunction}
 
 // NoticeError will check for the presence of an error.Error variable in the body at the index in bodyIndex.
 // If it finds that an error is returned, it will add a line after the assignment statement to capture an error
@@ -407,7 +407,6 @@ func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName
 					manager.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
 					manager.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", fnName), txnVarName)}, decl.Body.List...)
-
 				}
 				if manager.RequiresTransactionArgument(fnName) {
 					call.Args = append(call.Args, txnNewGoroutine(txnVarName))
@@ -419,23 +418,29 @@ func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName
 		case dst.Stmt:
 			rootPkg := manager.currentPackage
 			fnName, pkgName, call := manager.GetPackageFunctionInvocation(v)
+			downstreamFunctionTraced := false
 			if manager.ShouldInstrumentFunction(fnName, pkgName) {
 				manager.SetPackage(pkgName)
 				decl := manager.GetDeclaration(fnName)
-				_, wasModified := TraceFunction(manager, decl, txnVarName)
-				if wasModified {
+				_, downstreamFunctionTraced = TraceFunction(manager, decl, txnVarName)
+				if downstreamFunctionTraced {
 					manager.AddTxnArgumentToFunctionDecl(decl, txnVarName, fnName)
 					manager.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fnName, txnVarName)}, decl.Body.List...)
 				}
-
 			}
 			if manager.RequiresTransactionArgument(fnName) {
 				call.Args = append(call.Args, dst.NewIdent(txnVarName))
 				TopLevelFunctionChanged = true
 			}
 			manager.SetPackage(rootPkg)
-			for _, stmtFunc := range tracingFuncs {
+			if !downstreamFunctionTraced {
+				ok := NoticeError(manager, v, c, txnVarName)
+				if ok {
+					TopLevelFunctionChanged = true
+				}
+			}
+			for _, stmtFunc := range TracingFunctionsForSupportedPackages {
 				ok := stmtFunc(manager, v, c, txnVarName)
 				if ok {
 					TopLevelFunctionChanged = true

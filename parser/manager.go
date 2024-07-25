@@ -146,6 +146,7 @@ func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 	fnName := ""
 	packageName := ""
 	var pkgCall *dst.CallExpr
+
 	dst.Inspect(node, func(n dst.Node) bool {
 		switch v := n.(type) {
 		case *dst.BlockStmt:
