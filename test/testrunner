@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+import json
+import sys
+import subprocess
+import os
+import uuid
+
+if len(sys.argv) != 2:
+    sys.stderr.write(f"Usage: {sys.argv[0]} jsonfile\n")
+    sys.exit(1)
+
+with open(sys.argv[1]) as testfile:
+    tests = json.load(testfile)
+
+fails = 0
+for testnumber, testcase in enumerate(tests['tests']):
+    if 'cmp' not in testcase or not os.path.exists(testcase['cmp']):
+        print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} missing valid 'cmp' field")
+        fails += 1
+        continue
+
+    if 'dir' not in testcase or not os.path.isdir(testcase['dir']):
+        print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} missing valid 'dir' field")
+        fails += 1
+        continue
+
+    test_id = str(uuid.uuid4())
+    test_diff = os.path.join('/tmp', test_id + '.diff')
+    print(f"Running {testcase['name']} from {testcase['dir']} as {test_id}...")
+    my_dir = os.getcwd()
+    proc_args = ['go', 'run', '.', '-diff', test_diff, '-path', testcase['dir']]
+    if appname := testcase.get('name'):
+        proc_args.extend(['-name', appname])
+    os.chdir('../parser')
+    status = subprocess.run(proc_args).returncode
+    os.chdir(my_dir)
+    if status:
+        print(f"\33[1;31mFAIL\33[0m parser exited with status {status}")
+        fails += 1
+        continue
+
+    if status := subprocess.run(['diff', '-B', '-b', '--color=always', '-L', 'expected', '-L', 'actual', 
+                                testcase['cmp'], os.path.join('/tmp', test_id + '.diff')]).returncode:
+        print(f"\33[1;31mFAIL\33[0m diff {status}: output not as expected")
+        fails += 1
+        continue
+
+if fails == 0:
+    print(f"\33[1;32mPASS\33[0m ran {len(tests['tests'])} with no errors.")
+else:
+    print(f"\33[1;31mFAIL\33[0m ran {len(tests['tests'])}; errors: {fails}")
+    sys.exit(1)
