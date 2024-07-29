@@ -30,4 +30,5 @@ jobs:
         python -m pip install --upgrade pip
     - name: Run end to end tests
       run: |
-        ./test/testrunner test/testcases.json
+        cd test/
+        ./testrunner testcases.json
