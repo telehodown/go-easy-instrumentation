@@ -1,10 +1,10 @@
 package main
 
 import (
-	"demo-app/pkg"
 	"errors"
+	"http-app/pkg"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -42,7 +42,8 @@ func noticeError(w http.ResponseWriter, r *http.Request) {
 func external(w http.ResponseWriter, r *http.Request) {
 	req, err := http.NewRequest("GET", "https://example.com", nil)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		return
 	}
 
 	// Make an http request to an external address
@@ -60,6 +61,7 @@ func basicExternal(w http.ResponseWriter, r *http.Request) {
 	// Make an http request to an external address
 	resp, err := http.Get("https://example.com")
 	if err != nil {
+		slog.Error(err.Error())
 		io.WriteString(w, err.Error())
 		return
 	}
@@ -73,16 +75,19 @@ func roundtripper(w http.ResponseWriter, r *http.Request) {
 
 	request, err := http.NewRequest("GET", "https://example.com", nil)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		return
 	}
 
 	resp, err := client.Do(request)
 
 	// this is an unusual spacing and comment pattern to test the decoration preservation
 	if err != nil {
+		slog.Error(err.Error())
 		io.WriteString(w, err.Error())
 		return
 	}
+
 	defer resp.Body.Close()
 	io.Copy(w, resp.Body)
 }
@@ -103,7 +108,7 @@ func doAsyncThing(wg *sync.WaitGroup) {
 	time.Sleep(100 * time.Millisecond)
 	_, err := http.Get("http://example.com")
 	if err != nil {
-		log.Println(err)
+		slog.Error(err.Error())
 	}
 }
 

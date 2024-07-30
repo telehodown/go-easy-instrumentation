@@ -1,18 +1,18 @@
---- a/demo-app/pkg/service.go
-+++ b/demo-app/pkg/service.go
-@@ -2,16 +2,24 @@
- 
- import (
+--- a/http-app/pkg/service.go
++++ b/http-app/pkg/service.go
+@@ -4,16 +4,23 @@
+ 	"fmt"
+ 	"log/slog"
  	"net/http"
 +
 +	"github.com/newrelic/go-agent/v3/newrelic"
  )
  
 -func Service() error {
+-	req, err := buildGetRequest("https://example.com")
 +func Service(nrTxn *newrelic.Transaction) error {
 +	defer nrTxn.StartSegment("Service").End()
- 	req, err := http.NewRequest("GET", "https://example.com", nil)
-+	nrTxn.NoticeError(err)
++	req, err := buildGetRequest("https://example.com", nrTxn)
  	if err != nil {
  		return err
  	}
@@ -26,8 +26,20 @@
  	if err != nil {
  		return err
  	}
---- a/demo-app/handlers.go
-+++ b/demo-app/handlers.go
+@@ -22,8 +21,10 @@
+ 	return nil
+ }
+ 
+-func buildGetRequest(path string) (*http.Request, error) {
++func buildGetRequest(path string, nrTxn *newrelic.Transaction) (*http.Request, error) {
++	defer nrTxn.StartSegment("buildGetRequest").End()
+ 	req, err := http.NewRequest("GET", path, nil)
++	nrTxn.NoticeError(err)
+ 	if err != nil {
+ 		errMsg := fmt.Sprintf("failed to build request: %v", err)
+ 		slog.Error(errMsg)
+--- a/http-app/handlers.go
++++ b/http-app/handlers.go
 @@ -8,6 +8,8 @@
  	"net/http"
  	"sync"
@@ -55,7 +67,7 @@
  	if err != nil {
  		io.WriteString(w, err.Error())
  	} else {
-@@ -40,13 +39,20 @@
+@@ -40,14 +39,21 @@
  }
  
  func external(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +76,8 @@
  	req, err := http.NewRequest("GET", "https://example.com", nil)
 +	nrTxn.NoticeError(err)
  	if err != nil {
- 		log.Fatal(err)
+ 		slog.Error(err.Error())
+ 		return
  	}
  
  	// Make an http request to an external address
@@ -76,7 +89,7 @@
  	if err != nil {
  		io.WriteString(w, err.Error())
  		return
-@@ -57,8 +56,15 @@
+@@ -58,8 +56,15 @@
  }
  
  func basicExternal(w http.ResponseWriter, r *http.Request) {
@@ -90,9 +103,9 @@
  	resp, err := http.Get("https://example.com")
 +	nrTxn.NoticeError(err)
  	if err != nil {
+ 		slog.Error(err.Error())
  		io.WriteString(w, err.Error())
- 		return
-@@ -69,14 +73,20 @@
+@@ -71,15 +74,21 @@
  }
  
  func roundtripper(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +117,8 @@
  	request, err := http.NewRequest("GET", "https://example.com", nil)
 +	nrTxn.NoticeError(err)
  	if err != nil {
- 		log.Fatal(err)
+ 		slog.Error(err.Error())
+ 		return
  	}
  
 +	request = newrelic.RequestWithTransactionContext(request, nrTxn)
@@ -113,7 +127,7 @@
  
  	// this is an unusual spacing and comment pattern to test the decoration preservation
  	if err != nil {
-@@ -88,29 +90,39 @@
+@@ -93,29 +93,39 @@
  }
  
  func async(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +157,7 @@
  	_, err := http.Get("http://example.com")
 +	nrTxn.NoticeError(err)
  	if err != nil {
- 		log.Println(err)
+ 		slog.Error(err.Error())
  	}
  }
  
@@ -157,19 +171,19 @@
  	wg.Wait()
  	w.Write([]byte("done!"))
  }
---- a/demo-app/main.go
-+++ b/demo-app/main.go
-@@ -2,21 +2,33 @@
- 
- import (
+--- a/http-app/main.go
++++ b/http-app/main.go
+@@ -4,28 +4,41 @@
+ 	"log/slog"
  	"net/http"
+ 	"os"
 +	"time"
 +
 +	"github.com/newrelic/go-agent/v3/newrelic"
  )
  
  // design pattern that forces awareness of call depth to pass instrumentation
--func initHandlers() {
+-func initServer() {
 -	http.HandleFunc("/", index)
 -	http.HandleFunc("/error", noticeError)
 -	http.HandleFunc("/external", external)
@@ -177,7 +191,7 @@
 -	http.HandleFunc("/basicExternal", basicExternal)
 -	http.HandleFunc("/async", async)
 -	http.HandleFunc("/async2", async2)
-+func initHandlers(nrTxn *newrelic.Transaction) {
++func initServer(nrTxn *newrelic.Transaction) {
 +	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/", index))
 +	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/error", noticeError))
 +	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/external", external))
@@ -185,19 +199,27 @@
 +	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/basicExternal", basicExternal))
 +	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/async", async))
 +	http.HandleFunc(newrelic.WrapHandleFunc(nrTxn.Application(), "/async2", async2))
+ 
+ 	// this should get ignored
+ 	DoAThing(true)
  }
  
  func main() {
--	initHandlers()
-+	NewRelicAgent, err := newrelic.NewApplication(newrelic.ConfigAppName("demo app"), newrelic.ConfigFromEnvironment())
++	NewRelicAgent, err := newrelic.NewApplication(newrelic.ConfigAppName("http web app"), newrelic.ConfigFromEnvironment())
 +	if err != nil {
 +		panic(err)
 +	}
 +
-+	nrTxn := NewRelicAgent.StartTransaction("initHandlers")
-+	initHandlers(nrTxn)
+ 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
+ 	slog.SetDefault(logger)
+ 
+ 	slog.Info("starting server at localhost:8000")
+-	initServer()
++	nrTxn := NewRelicAgent.StartTransaction("initServer")
++	initServer(nrTxn)
+ 
 +	nrTxn.End()
- 	DoAThing(true)
++
  	http.ListenAndServe(":8000", nil)
 +
 +	NewRelicAgent.Shutdown(5 * time.Second)

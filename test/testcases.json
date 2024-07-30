@@ -1,7 +1,0 @@
-{"tests": [
-	{
-		"name": "demo app",
-		"dir": "../demo-app",
-		"cmp": "demo-app.ref"
-	}
-]}

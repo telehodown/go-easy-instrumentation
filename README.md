@@ -30,12 +30,15 @@ Please have a version of Go installed that is within the support window for the 
 ## Getting Started
 This tool works best when used with git. It's a best practice to ensure that your application is on a branch without any unstaged changes before applying any of the generated changes to it. After checking that, follow these steps to generate and apply the changes that install the New Relic Go Agent in an application:
 
-1. go to parser directory: ```cd parser```
-2. run the CLI tool: ```go run .```
-3. follow the prompts to customize the process as needed
-4. open your instrumented application directory: ```cd ../my-application```
-5. There will be a `.diff` file written there. By default, this diff file will be named `new-relic-instrumentation.diff`. Verify that the contents of this diff file are complete and corect before applying it to any code.
-6. Apply the changes using `git apply`
+1. Go to parser directory: ```cd parser```
+2. Run the CLI tool: ```go run . -path ../my-application/``.  This will create a file named `new-relic-instrumentation.diff` in your working directory
+3. Please verify, and correct the contents of the `diff` file
+4. Apply the changes
+  ```sh
+  mv new-relic-instrumentation.diff ../my-application/
+  cd ../my-application
+  git apply new-relic-instrumentation.diff
+  ```
 
 Once the changes are applied, the application should run with the New Relic Go Agent installed. If the agent installation is not working the way you want it to, the changes can easily be undone using git tools by either stashing them with `git stash` or reverting the code to a previous commit.
 

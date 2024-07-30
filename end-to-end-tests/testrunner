@@ -14,19 +14,27 @@ with open(sys.argv[1]) as testfile:
 
 fails = 0
 for testnumber, testcase in enumerate(tests['tests']):
-    if 'cmp' not in testcase or not os.path.exists(testcase['cmp']):
+    if 'cmp' not in testcase:
         print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} missing valid 'cmp' field")
         fails += 1
         continue
+    elif not os.path.exists(testcase['cmp']):
+        print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} 'cmp' field %s is an invalid file path", testcase['cmp'])
+        fails += 1
+        continue
 
-    if 'dir' not in testcase or not os.path.isdir(testcase['dir']):
-        print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} missing valid 'dir' field")
+    if 'dir' not in testcase:
+        print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} missing 'dir' field")
+        fails += 1
+        continue
+    elif not os.path.isdir(testcase['dir']):
+        print(f"\33[1;31mERROR\33[0m Testcase #{testnumber} 'dir' field %s is an invalid file path", testcase['dir'])
         fails += 1
         continue
 
     test_id = str(uuid.uuid4())
     test_diff = os.path.join('/tmp', test_id + '.diff')
-    print(f"Running {testcase['name']} from {testcase['dir']} as {test_id}...")
+    print(f"Running \"{testcase['name']}\" from \"{testcase['dir']}\" as {test_id}...")
     my_dir = os.getcwd()
     proc_args = ['go', 'run', '.', '-diff', test_diff, '-path', testcase['dir']]
     if appname := testcase.get('name'):
