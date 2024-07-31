@@ -21,6 +21,8 @@ Regardless of the scope, this tool will not interfere with your application's op
 
 As part of the analysis, this tool may invoke `go get` or other Go language toolchain commands which may modify your `go.mod` file, but not your actual source code.
 
+**Note** that this tool can not detect if you already have new relic instrumentation. Please only use this on applications without any instrumentation.
+
 ## Installation
 Please have a version of Go installed that is within the support window for the current [Go programming language lifecycle](https://endoflife.date/go).
 1. Clone this repository to a directory on your system. For example: `git clone .../go-agent-pre-instrumentation`
