@@ -276,6 +276,7 @@ func (m *InstrumentationManager) WriteDiff() {
 			}
 		}
 	}
+	log.Printf("changes written to %s", m.diffFile)
 }
 
 func (m *InstrumentationManager) AddRequiredModules() {

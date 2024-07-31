@@ -17,6 +17,7 @@ func createDiffFile(path string) {
 }
 
 func main() {
+	log.Default().SetFlags(0)
 	cfg := NewCLIConfig()
 
 	createDiffFile(cfg.DiffFile)

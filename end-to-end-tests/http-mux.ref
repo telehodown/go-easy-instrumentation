@@ -1,0 +1,43 @@
+--- a/http-mux-app/server.go
++++ b/http-mux-app/server.go
+@@ -10,6 +10,8 @@
+ 	"os/signal"
+ 	"sync/atomic"
+ 	"time"
++
++	"github.com/newrelic/go-agent/v3/newrelic"
+ )
+ 
+ type key int
+@@ -24,6 +26,11 @@
+ )
+ 
+ func main() {
++	NewRelicAgent, err := newrelic.NewApplication(newrelic.ConfigAppName("http-mux web app"), newrelic.ConfigFromEnvironment())
++	if err != nil {
++		panic(err)
++	}
++
+ 	flag.StringVar(&listenAddr, "listen-addr", ":5000", "server listen address")
+ 	flag.Parse()
+ 
+@@ -31,8 +38,8 @@
+ 	logger.Println("Server is starting...")
+ 
+ 	router := http.NewServeMux()
+-	router.Handle("/", index())
+-	router.Handle("/healthz", healthz())
++	router.Handle(newrelic.WrapHandleFunc(NewRelicAgent, "/", index()))
++	router.Handle(newrelic.WrapHandleFunc(NewRelicAgent, "/healthz", healthz()))
+ 
+ 	nextRequestID := func() string {
+ 		return fmt.Sprintf("%d", time.Now().UnixNano())
+@@ -74,6 +81,8 @@
+ 
+ 	<-done
+ 	logger.Println("Server stopped")
++
++	NewRelicAgent.Shutdown(5 * time.Second)
+ }
+ 
+ func index() http.Handler {
