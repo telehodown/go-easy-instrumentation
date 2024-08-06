@@ -1,5 +1,5 @@
---- a/http-app/pkg/service.go
-+++ b/http-app/pkg/service.go
+--- a/pkg/service.go
++++ b/pkg/service.go
 @@ -4,16 +4,23 @@
  	"fmt"
  	"log/slog"
@@ -38,8 +38,8 @@
  	if err != nil {
  		errMsg := fmt.Sprintf("failed to build request: %v", err)
  		slog.Error(errMsg)
---- a/http-app/handlers.go
-+++ b/http-app/handlers.go
+--- a/handlers.go
++++ b/handlers.go
 @@ -8,6 +8,8 @@
  	"net/http"
  	"sync"
@@ -171,8 +171,8 @@
  	wg.Wait()
  	w.Write([]byte("done!"))
  }
---- a/http-app/main.go
-+++ b/http-app/main.go
+--- a/main.go
++++ b/main.go
 @@ -4,28 +4,41 @@
  	"log/slog"
  	"net/http"

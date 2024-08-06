@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
@@ -32,6 +31,7 @@ type tracedFunction struct {
 
 // InstrumentationManager maintains state relevant to tracing across all files, packages and functions.
 type InstrumentationManager struct {
+	userAppPath       string // path to the user's application as provided by the user
 	diffFile          string
 	appName           string
 	agentVariableName string
@@ -51,8 +51,9 @@ const (
 )
 
 // NewInstrumentationManager initializes an InstrumentationManager cache for a given package.
-func NewInstrumentationManager(pkgs []*decorator.Package, appName, agentVariableName, diffFile string) *InstrumentationManager {
+func NewInstrumentationManager(pkgs []*decorator.Package, appName, agentVariableName, diffFile, userAppPath string) *InstrumentationManager {
 	manager := &InstrumentationManager{
+		userAppPath:       userAppPath,
 		diffFile:          diffFile,
 		appName:           appName,
 		agentVariableName: agentVariableName,
@@ -250,12 +251,14 @@ func (m *InstrumentationManager) WriteDiff() {
 				log.Fatal(err)
 			}
 
-			basePath := strings.Split(path, state.pkg.ID)
-			if len(basePath) == 0 {
-				log.Fatalf("Could not find base path for file %s", path)
-			}
+			// what this file will be named in the diff file
+			var diffFileName string
 
-			diffFileName, err := filepath.Rel(basePath[0], path)
+			absAppPath, err := filepath.Abs(m.userAppPath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			diffFileName, err = filepath.Rel(absAppPath, path)
 			if err != nil {
 				log.Fatal(err)
 			}
