@@ -266,7 +266,7 @@ func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstuti
 		expr, ok := astClientVar.(ast.Expr)
 		if ok {
 			t := pkg.TypesInfo.TypeOf(expr).String()
-			if t == HttpClientType {
+			if t == HttpClientType && c.Index() >= 0 {
 				// add new line that adds roundtripper to transports
 				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
 				stmt.Decs.After = dst.None
@@ -457,7 +457,7 @@ func ExternalHttpCall(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil
 		}
 		return true
 	})
-	if call != nil {
+	if call != nil && c.Index() >= 0 {
 		clientVar := GetNetHttpClientVariableName(call, pkg)
 		requestObject := call.Args[0]
 		if clientVar == HttpDefaultClientVariable {
