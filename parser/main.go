@@ -28,7 +28,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	manager := NewInstrumentationManager(pkgs, cfg.AppName, cfg.AgentVariableName, cfg.DiffFile)
+	manager := NewInstrumentationManager(pkgs, cfg.AppName, cfg.AgentVariableName, cfg.DiffFile, cfg.PackagePath)
 	err = manager.InstrumentPackages()
 	if err != nil {
 		log.Fatal(err)
