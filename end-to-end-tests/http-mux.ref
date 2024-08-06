@@ -1,5 +1,5 @@
---- a/http-mux-app/server.go
-+++ b/http-mux-app/server.go
+--- a/server.go
++++ b/server.go
 @@ -10,6 +10,8 @@
  	"os/signal"
  	"sync/atomic"
