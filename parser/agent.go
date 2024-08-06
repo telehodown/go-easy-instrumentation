@@ -196,7 +196,8 @@ func InstrumentMain(mainFunctionNode dst.Node, manager *InstrumentationManager, 
 						manager.SetPackage(rootPkg)
 					}
 					// pass the called function a transaction if needed
-					if manager.RequiresTransactionArgument(fnName) {
+					// always check c.Index >= 0 to avoid panics when using c.Insert methods
+					if manager.RequiresTransactionArgument(fnName) && c.Index() >= 0 {
 						txnVarName := defaultTxnName
 						c.InsertBefore(startTransaction(manager.agentVariableName, txnVarName, fnName, txnStarted))
 						c.InsertAfter(endTransaction(txnVarName))
@@ -367,7 +368,7 @@ func NoticeError(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Curs
 	switch nodeVal := stmt.(type) {
 	case *dst.AssignStmt:
 		errVar := findErrorVariable(nodeVal, manager.GetDecoratorPackage())
-		if errVar != "" {
+		if errVar != "" && c.Index() >= 0 {
 			c.InsertAfter(txnNoticeError(errVar, txnName, nodeVal.Decorations()))
 			return true
 		}
