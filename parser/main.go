@@ -8,6 +8,10 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+const (
+	loadMode = packages.LoadSyntax
+)
+
 func createDiffFile(path string) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -22,7 +26,6 @@ func main() {
 
 	createDiffFile(cfg.DiffFile)
 
-	loadMode := packages.LoadSyntax
 	pkgs, err := decorator.Load(&packages.Config{Dir: cfg.PackagePath, Mode: loadMode}, cfg.PackageName)
 	if err != nil {
 		log.Fatal(err)

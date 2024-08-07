@@ -256,24 +256,31 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 	}
 }
 
-// InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
-// looks for the following pattern: client := &http.Client{}
-func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
-	stmt, ok := n.(*dst.AssignStmt)
-	if ok && len(stmt.Rhs) == 1 && len(stmt.Lhs) == 1 {
+// more unit test friendly helper function
+func isNetHttpClientDefinition(stmt *dst.AssignStmt) bool {
+	if len(stmt.Rhs) == 1 && len(stmt.Lhs) == 1 && stmt.Tok == token.DEFINE {
 		unary, ok := stmt.Rhs[0].(*dst.UnaryExpr)
 		if ok && unary.Op == token.AND {
 			lit, ok := unary.X.(*dst.CompositeLit)
 			if ok {
 				ident, ok := lit.Type.(*dst.Ident)
-				if ok && ident.Name == "Client" && ident.Path == "net/http" && c.Index() >= 0 {
-					// add new line that adds roundtripper to transports
-					c.InsertAfter(injectRoundTripper(stmt.Lhs[0], n.Decorations().After))
-					stmt.Decs.After = dst.None
-					manager.AddImport(newrelicAgentImport)
+				if ok && ident.Name == "Client" && ident.Path == "net/http" {
+					return true
 				}
 			}
 		}
+	}
+	return false
+}
+
+// InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
+// looks for the following pattern: client := &http.Client{}
+func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
+	stmt, ok := n.(*dst.AssignStmt)
+	if ok && isNetHttpClientDefinition(stmt) && c.Index() >= 0 {
+		c.InsertAfter(injectRoundTripper(stmt.Lhs[0], n.Decorations().After)) // add roundtripper to transports
+		stmt.Decs.After = dst.None
+		manager.AddImport(newrelicAgentImport)
 	}
 }
 
