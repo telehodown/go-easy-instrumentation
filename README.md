@@ -1,12 +1,12 @@
 <a href="https://opensource.newrelic.com/oss-category/#new-relic-experimental"><picture><source media="(prefers-color-scheme: dark)" srcset="https://github.com/newrelic/opensource-website/raw/main/src/images/categories/dark/Experimental.png"><source media="(prefers-color-scheme: light)" srcset="https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Experimental.png"><img alt="New Relic Open Source experimental project banner." src="https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Experimental.png"></picture></a>
 
-# Go Agent Assisted Instrumentation
-Go is a compiled language with an opaque runtime, making it unable to support automatic instrumentation the way other languages are, which is why the New Relic Go Agent is designed as an SDK. That makes installing and getting the most out of the Go Agent something that requires much more upfront investment than other language agents. To address this, the Go Agent team created the Go Agent Assisted Instrumentation tool, which will do most of the instrumentation work for you by generating changes to your source code that instruments your application with the New Relic Go Agent.
+# Go Easy Instrumentation
+Go is a compiled language with an opaque runtime, making it unable to support automatic instrumentation the way other languages are, which is why the New Relic Go Agent is designed as an SDK. That makes installing and getting the most out of the Go Agent something that requires much more upfront investment than other language agents. To address this, the Go Agent team created the Go Easy Instrumentation tool, which will do most of the instrumentation work for you by generating changes to your source code that instruments your application with the New Relic Go Agent.
 
 [![asciicast](https://asciinema.org/a/r0Il7o2eMiZaLKHIlew3IL2nx.svg)](https://asciinema.org/a/r0Il7o2eMiZaLKHIlew3IL2nx)
 
-## Limited Preview Notice
-This is a limited preview of the Assisted Instrumentation product. As such, it is still under active development. We appreciate any feedback you may have about any issues you find as you explore this tool.
+## Preview Notice
+This is a preview of Go Easy Instrumentation. As such, it is still under active development. We appreciate any feedback you may have about any issues you find as you explore this tool.
 
 The scope of what this tool can instrument in your application is limited to the listed features:
  - Capturing errors in any function wrapped or traced by a transaction
@@ -50,10 +50,10 @@ Once the changes are applied, the application should run with the New Relic Go A
 This is an experimental product, and New Relic is not offering official support at the moment. Please create issues in github if you are encountering a problem that you're unable to resolve. When creating issues, its vital to include as much of the prompted for information as possible. This enables us to get to the root cause of the issue much more quickly. Please also make sure to search existing issues before creating a new one.
 
 ## Contributing
-We encourage your contributions to improve the Go Agent Assisted Instrumentation tool! Keep in mind when you submit your pull request, you'll need to sign the CLA via the click-through using CLA-Assistant. You only have to sign the CLA one time per project.
+We encourage your contributions to improve the Go Easy Easy Instrumentation tool! Keep in mind when you submit your pull request, you'll need to sign the CLA via the click-through using CLA-Assistant. You only have to sign the CLA one time per project.
 If you have any questions, or to execute our corporate CLA, required if your contribution is on behalf of a company,  please drop us an email at opensource@newrelic.com.
 
 
 ## License
-Go Agent Assisted Instrumentation is licensed under the [Apache 2.0](http://apache.org/licenses/LICENSE-2.0.txt) License.
->The Go Agent Assisted Instrumentation tool also uses source code from third-party libraries. You can find full details on which libraries are used and the terms under which they are licensed in the third-party notices document.
+Go Easy Instrumentation is licensed under the [Apache 2.0](http://apache.org/licenses/LICENSE-2.0.txt) License.
+>The Go Easy Instrumentation tool also uses source code from third-party libraries. You can find full details on which libraries are used and the terms under which they are licensed in the third-party notices document.
