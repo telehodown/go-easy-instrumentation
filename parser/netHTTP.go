@@ -257,20 +257,21 @@ func injectRoundTripper(clientVariable dst.Expr, spacingAfter dst.SpaceType) *ds
 }
 
 // InstrumentHttpClient automatically injects a newrelic roundtripper into any newly created http client
+// looks for the following pattern: client := &http.Client{}
 func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	stmt, ok := n.(*dst.AssignStmt)
-	pkg := manager.GetDecoratorPackage()
-	if ok && len(stmt.Lhs) == 1 {
-		clientVar := stmt.Lhs[0]
-		astClientVar := pkg.Decorator.Ast.Nodes[clientVar]
-		expr, ok := astClientVar.(ast.Expr)
-		if ok {
-			t := pkg.TypesInfo.TypeOf(expr).String()
-			if t == HttpClientType && c.Index() >= 0 {
-				// add new line that adds roundtripper to transports
-				c.InsertAfter(injectRoundTripper(clientVar, n.Decorations().After))
-				stmt.Decs.After = dst.None
-				manager.AddImport(newrelicAgentImport)
+	if ok && len(stmt.Rhs) == 1 && len(stmt.Lhs) == 1 {
+		unary, ok := stmt.Rhs[0].(*dst.UnaryExpr)
+		if ok && unary.Op == token.AND {
+			lit, ok := unary.X.(*dst.CompositeLit)
+			if ok {
+				ident, ok := lit.Type.(*dst.Ident)
+				if ok && ident.Name == "Client" && ident.Path == "net/http" && c.Index() >= 0 {
+					// add new line that adds roundtripper to transports
+					c.InsertAfter(injectRoundTripper(stmt.Lhs[0], n.Decorations().After))
+					stmt.Decs.After = dst.None
+					manager.AddImport(newrelicAgentImport)
+				}
 			}
 		}
 	}
