@@ -72,6 +72,7 @@ func basicExternal(w http.ResponseWriter, r *http.Request) {
 
 func roundtripper(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
+	client2 := client // verify that this doesn't get the transport replaced by the parser
 
 	request, err := http.NewRequest("GET", "https://example.com", nil)
 	if err != nil {
@@ -79,7 +80,7 @@ func roundtripper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := client.Do(request)
+	resp, err := client2.Do(request)
 
 	// this is an unusual spacing and comment pattern to test the decoration preservation
 	if err != nil {
