@@ -311,3 +311,125 @@ func index(w http.ResponseWriter, r *http.Request, x string) {
 		})
 	}
 }
+
+func Test_getNetHttpMethod(t *testing.T) {
+	tests := []struct {
+		name         string
+		code         string
+		lineNum      int
+		wantFuncName string
+	}{
+		{
+			name: "http_get",
+			code: `
+package main
+import "net/http"
+func main() {
+	http.Get("http://example.com")
+}`,
+			lineNum:      0,
+			wantFuncName: "Get",
+		},
+		{
+			name: "http_post",
+			code: `
+package main
+import "net/http"
+func main() {
+	http.Post("http://example.com")
+}`,
+			lineNum:      0,
+			wantFuncName: "Post",
+		},
+		{
+			name: "http_get",
+			code: `
+package main
+import "net/http"
+func main() {
+	http.Get("http://example.com")
+}`,
+			lineNum:      0,
+			wantFuncName: "Get",
+		},
+		{
+			name: "http_do",
+			code: `
+package main
+import "net/http"
+func main() {
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	http.DefaultClient.Do(req)
+}`,
+			lineNum:      1,
+			wantFuncName: "Do",
+		},
+		{
+			name: "http_client_do",
+			code: `
+package main
+import "net/http"
+func main() {
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	client.Do(req)
+}`,
+			lineNum:      2,
+			wantFuncName: "Do",
+		},
+		{
+			name: "complex_http_client_do",
+			code: `
+package main
+import "net/http"
+func main() {
+	type clientInfo struct {
+		client *http.Client
+		name string
+	}
+	
+	myClient := clientInfo{
+		client: &http.Client{},
+		name: "myClient",
+	}
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	myClient.client.Do(req)
+}`,
+			lineNum:      3,
+			wantFuncName: "Do",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testAppDir := "tmp"
+			fileName := tt.name + ".go"
+			pkgs, err := createTestAppPackage(testAppDir, fileName, tt.code)
+			defer cleanupTestApp(t, testAppDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			decl, ok := pkgs[0].Syntax[0].Decls[1].(*dst.FuncDecl)
+			if !ok {
+				t.Fatal("code must contain only one function declaration")
+			}
+
+			expr, ok := decl.Body.List[tt.lineNum].(*dst.ExprStmt)
+			if !ok {
+				t.Fatal("lineNum must point to an expression statement")
+			}
+
+			call, ok := expr.X.(*dst.CallExpr)
+			if !ok {
+				t.Fatal("lineNum must point to an expression containing a call expression")
+			}
+
+			gotFuncName := GetNetHttpMethod(call, pkgs[0])
+
+			if gotFuncName != tt.wantFuncName {
+				t.Errorf("isNetHttpMethodCannotInstrument() = %v, want %v", gotFuncName, tt.wantFuncName)
+			}
+		})
+	}
+}
