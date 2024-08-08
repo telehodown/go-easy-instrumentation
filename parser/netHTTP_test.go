@@ -433,3 +433,103 @@ func main() {
 		})
 	}
 }
+
+func Test_GetNetHttpClientVariableName(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		lineNum  int
+		wantName string
+	}{
+		{
+			name: "no client",
+			code: `
+package main
+import "net/http"
+func main() {
+	http.Get("http://example.com")
+}`,
+			lineNum:  0,
+			wantName: "",
+		},
+		{
+			name: "http_do",
+			code: `
+package main
+import "net/http"
+func main() {
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	http.DefaultClient.Do(req)
+}`,
+			lineNum:  1,
+			wantName: "DefaultClient",
+		},
+		{
+			name: "http_client_do",
+			code: `
+package main
+import "net/http"
+func main() {
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	client.Do(req)
+}`,
+			lineNum:  2,
+			wantName: "",
+		},
+		{
+			name: "complex_http_client_do",
+			code: `
+package main
+import "net/http"
+func main() {
+	type clientInfo struct {
+		client *http.Client
+		name string
+	}
+	
+	myClient := clientInfo{
+		client: &http.Client{},
+		name: "myClient",
+	}
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	myClient.client.Do(req)
+}`,
+			lineNum:  3,
+			wantName: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testAppDir := "tmp"
+			fileName := tt.name + ".go"
+			pkgs, err := createTestAppPackage(testAppDir, fileName, tt.code)
+			defer cleanupTestApp(t, testAppDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			decl, ok := pkgs[0].Syntax[0].Decls[1].(*dst.FuncDecl)
+			if !ok {
+				t.Fatal("code must contain only one function declaration")
+			}
+
+			expr, ok := decl.Body.List[tt.lineNum].(*dst.ExprStmt)
+			if !ok {
+				t.Fatal("lineNum must point to an expression statement")
+			}
+
+			call, ok := expr.X.(*dst.CallExpr)
+			if !ok {
+				t.Fatal("lineNum must point to an expression containing a call expression")
+			}
+
+			gotFuncName := GetNetHttpClientVariableName(call, pkgs[0])
+
+			if gotFuncName != tt.wantName {
+				t.Errorf("isNetHttpMethodCannotInstrument() = %v, want %v", gotFuncName, tt.wantName)
+			}
+		})
+	}
+}
