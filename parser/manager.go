@@ -232,9 +232,11 @@ func (m *InstrumentationManager) RequiresTransactionArgument(functionName string
 
 // GetDeclaration returns a pointer to the location in the DST tree where a function is declared and defined.
 func (m *InstrumentationManager) GetDeclaration(functionName string) *dst.FuncDecl {
-	v, ok := m.packages[m.currentPackage].tracedFuncs[functionName]
-	if ok {
-		return v.body
+	if m.packages[m.currentPackage] != nil && m.packages[m.currentPackage].tracedFuncs != nil {
+		v, ok := m.packages[m.currentPackage].tracedFuncs[functionName]
+		if ok {
+			return v.body
+		}
 	}
 	return nil
 }

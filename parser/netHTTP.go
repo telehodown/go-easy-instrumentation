@@ -35,24 +35,28 @@ const (
 )
 
 func typeOfIdent(ident *dst.Ident, pkg *decorator.Package) string {
-	if ident == nil {
+	if ident == nil || pkg == nil {
 		return ""
 	}
 	astNode := pkg.Decorator.Ast.Nodes[ident]
 	var astIdent *ast.Ident
 	switch v := astNode.(type) {
 	case *ast.SelectorExpr:
-		astIdent = v.Sel
+		if v != nil {
+			astIdent = v.Sel
+		}
 	case *ast.Ident:
 		astIdent = v
 	default:
 		return ""
 	}
 
-	uses, ok := pkg.TypesInfo.Uses[astIdent]
-	if ok {
-		if uses.Pkg() != nil {
-			return uses.Pkg().Path()
+	if pkg.TypesInfo != nil {
+		uses, ok := pkg.TypesInfo.Uses[astIdent]
+		if ok {
+			if uses.Pkg() != nil {
+				return uses.Pkg().Path()
+			}
 		}
 	}
 	return ""
@@ -177,6 +181,10 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 }
 
 func isHttpHandler(decl *dst.FuncDecl, pkg *decorator.Package) bool {
+	if pkg == nil {
+		return false
+	}
+
 	params := decl.Type.Params.List
 	if len(params) == 2 {
 		var rw, req bool
@@ -186,7 +194,7 @@ func isHttpHandler(decl *dst.FuncDecl, pkg *decorator.Package) bool {
 			if ok {
 				astNode := pkg.Decorator.Ast.Nodes[ident]
 				astIdent, ok := astNode.(*ast.SelectorExpr)
-				if ok {
+				if ok && pkg.TypesInfo != nil {
 					paramType := pkg.TypesInfo.Types[astIdent]
 					t := paramType.Type.String()
 					if t == "net/http.ResponseWriter" {
@@ -196,7 +204,7 @@ func isHttpHandler(decl *dst.FuncDecl, pkg *decorator.Package) bool {
 			} else if okStar {
 				astNode := pkg.Decorator.Ast.Nodes[star]
 				astStar, ok := astNode.(*ast.StarExpr)
-				if ok {
+				if ok && pkg.TypesInfo != nil {
 					paramType := pkg.TypesInfo.Types[astStar]
 					t := paramType.Type.String()
 					if t == "*net/http.Request" {
@@ -278,7 +286,7 @@ func isNetHttpClientDefinition(stmt *dst.AssignStmt) bool {
 // looks for the following pattern: client := &http.Client{}
 func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	stmt, ok := n.(*dst.AssignStmt)
-	if ok && isNetHttpClientDefinition(stmt) && c.Index() >= 0 {
+	if ok && isNetHttpClientDefinition(stmt) && c.Index() >= 0  && n.Decorations() != nil {
 		c.InsertAfter(injectRoundTripper(stmt.Lhs[0], n.Decorations().After)) // add roundtripper to transports
 		stmt.Decs.After = dst.None
 		manager.AddImport(newrelicAgentImport)
@@ -292,7 +300,7 @@ func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 		"// https://docs.newrelic.com/docs/apm/agents/go-agent/configuration/distributed-tracing-go-agent/#make-http-requests",
 	}
 
-	if len(decs.Start.All()) > 0 {
+	if decs != nil && len(decs.Start.All()) > 0 {
 		comment = append(comment, "//")
 	}
 
@@ -332,22 +340,28 @@ func isNetHttpMethodCannotInstrument(node dst.Node) (string, bool) {
 func CannotInstrumentHttpMethod(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	funcName, ok := isNetHttpMethodCannotInstrument(n)
 	if ok {
-		n.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, n.Decorations())...)
+		if decl := n.Decorations(); decl != nil {
+			decl.Start.Prepend(cannotTraceOutboundHttp(funcName, n.Decorations())...)
+		}
 	}
 }
 
 func startExternalSegment(request dst.Expr, txnVar, segmentVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
 	// copy all preceeding decorations from the previous node
 	decs := dst.AssignStmtDecorations{
-		NodeDecs: dst.NodeDecs{
+	}
+	if nodeDecs != nil {
+		decs.NodeDecs = dst.NodeDecs{
 			Before: nodeDecs.Before,
 			Start:  nodeDecs.Start,
-		},
-	}
+		}
 
-	// Clear the decs from the previous node since they are being moved up
-	nodeDecs.Before = dst.None
-	nodeDecs.Start.Clear()
+		// Clear the decs from the previous node since they are being moved up
+		if nodeDecs != nil {
+			nodeDecs.Before = dst.None
+			nodeDecs.Start.Clear()
+		}
+	}
 
 	return &dst.AssignStmt{
 		Tok: token.DEFINE,
@@ -386,15 +400,16 @@ func captureHttpResponse(segmentVariable string, responseVariable dst.Expr) *dst
 }
 
 func endExternalSegment(segmentName string, nodeDecs *dst.NodeDecs) *dst.ExprStmt {
-	decs := dst.ExprStmtDecorations{
-		NodeDecs: dst.NodeDecs{
+	decs := dst.ExprStmtDecorations{}
+	if nodeDecs != nil {
+		decs.NodeDecs = dst.NodeDecs{
 			After: nodeDecs.After,
 			End:   nodeDecs.End,
-		},
-	}
+		}
 
-	nodeDecs.After = dst.None
-	nodeDecs.End.Clear()
+		nodeDecs.After = dst.None
+		nodeDecs.End.Clear()
+	}
 
 	return &dst.ExprStmt{
 		X: &dst.CallExpr{
@@ -411,16 +426,17 @@ func endExternalSegment(segmentName string, nodeDecs *dst.NodeDecs) *dst.ExprStm
 // equal to calling: newrelic.RequestWithTransactionContext()
 func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
 	// Copy all decs above prior statement into this one
-	decs := dst.AssignStmtDecorations{
-		NodeDecs: dst.NodeDecs{
+	decs := dst.AssignStmtDecorations{}
+	if nodeDecs != nil {
+		decs.NodeDecs = dst.NodeDecs{
 			Before: nodeDecs.Before,
 			Start:  nodeDecs.Start,
-		},
-	}
+		}
 
-	// Clear the decs from the previous node since they are being moved up
-	nodeDecs.Before = dst.None
-	nodeDecs.Start.Clear()
+		// Clear the decs from the previous node since they are being moved up
+		nodeDecs.Before = dst.None
+		nodeDecs.Start.Clear()
+	}
 
 	return &dst.AssignStmt{
 		Tok: token.ASSIGN,
