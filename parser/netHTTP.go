@@ -298,27 +298,38 @@ func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 	return comment
 }
 
-// CannotInstrumentHttpMethod is a function that discovers methods of net/http. If that function can not be penetrated by
-// instrumentation, it leaves a comment header warning the customer. This function needs no tracing context to work.
-func CannotInstrumentHttpMethod(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
-	pkg := manager.GetDecoratorPackage()
-	switch v := n.(type) {
+func isNetHttpMethodCannotInstrument(node dst.Node) (string, bool) {
+	var cannotInstrument bool
+	var returnFuncName string
+
+	switch node.(type) {
 	case *dst.AssignStmt, *dst.ExprStmt:
-		dst.Inspect(n, func(n dst.Node) bool {
+		dst.Inspect(node, func(n dst.Node) bool {
 			c, ok := n.(*dst.CallExpr)
 			if ok {
-				funcName := GetNetHttpMethod(c, pkg)
-				switch funcName {
-				case HttpGet, HttpPost, HttpPostForm, HttpHead:
-					astCall := pkg.Decorator.Ast.Nodes[c].(*ast.CallExpr)
-					if pkg.TypesInfo.TypeOf(astCall).String() == "(resp *net/http.Response, err error)" {
-						v.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, v.Decorations())...)
+				ident, ok := c.Fun.(*dst.Ident)
+				if ok && ident.Path == NetHttp {
+					switch ident.Name {
+					case HttpGet, HttpPost, HttpPostForm, HttpHead:
+						returnFuncName = ident.Name
+						cannotInstrument = true
+						return false
 					}
 				}
-				return false
 			}
 			return true
 		})
+	}
+
+	return returnFuncName, cannotInstrument
+}
+
+// CannotInstrumentHttpMethod is a function that discovers methods of net/http. If that function can not be penetrated by
+// instrumentation, it leaves a comment header warning the customer. This function needs no tracing context to work.
+func CannotInstrumentHttpMethod(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
+	funcName, ok := isNetHttpMethodCannotInstrument(n)
+	if ok {
+		n.Decorations().Start.Prepend(cannotTraceOutboundHttp(funcName, n.Decorations())...)
 	}
 }
 
