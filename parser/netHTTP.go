@@ -176,7 +176,8 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 	fn.Body.List = stmts
 }
 
-func isHttpHandler(params []*dst.Field, pkg *decorator.Package) bool {
+func isHttpHandler(decl *dst.FuncDecl, pkg *decorator.Package) bool {
+	params := decl.Type.Params.List
 	if len(params) == 2 {
 		var rw, req bool
 		for _, param := range params {
@@ -214,7 +215,7 @@ func isHttpHandler(params []*dst.Field, pkg *decorator.Package) bool {
 // down the call chain of the function it is invoked on.
 func InstrumentHandleFunction(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	fn, isFn := n.(*dst.FuncDecl)
-	if isFn && isHttpHandler(fn.Type.Params.List, manager.GetDecoratorPackage()) {
+	if isFn && isHttpHandler(fn, manager.GetDecoratorPackage()) {
 		txnName := "nrTxn"
 		newFn, ok := TraceFunction(manager, fn, txnName)
 		if ok {
@@ -264,7 +265,7 @@ func isNetHttpClientDefinition(stmt *dst.AssignStmt) bool {
 			lit, ok := unary.X.(*dst.CompositeLit)
 			if ok {
 				ident, ok := lit.Type.(*dst.Ident)
-				if ok && ident.Name == "Client" && ident.Path == "net/http" {
+				if ok && ident.Name == "Client" && ident.Path == NetHttp {
 					return true
 				}
 			}
@@ -298,6 +299,8 @@ func cannotTraceOutboundHttp(method string, decs *dst.NodeDecs) []string {
 	return comment
 }
 
+// isNetHttpMethodCannotInstrument is a function that discovers methods of net/http that can not be instrumented by new relic
+// and returns the name of the method and whether it can be instrumented or not.
 func isNetHttpMethodCannotInstrument(node dst.Node) (string, bool) {
 	var cannotInstrument bool
 	var returnFuncName string

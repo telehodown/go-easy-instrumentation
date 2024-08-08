@@ -381,6 +381,10 @@ func NoticeError(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil.Curs
 // This function returns a FuncDecl object pointer that contains the potentially modified version of the FuncDecl object, fn, passed. If
 // the bool field is true, then the function was modified, and requires a transaction most likely.
 func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName string) (*dst.FuncDecl, bool) {
+	if !manager.ShouldInstrumentFunction(fn.Name.Name, manager.GetPackageName()) {
+		return nil, false
+	}
+
 	TopLevelFunctionChanged := false
 	outputNode := dstutil.Apply(fn, nil, func(c *dstutil.Cursor) bool {
 		n := c.Node()

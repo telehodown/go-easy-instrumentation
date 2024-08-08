@@ -250,3 +250,64 @@ func main() {
 		})
 	}
 }
+
+func Test_isHttpHandler(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		wantBool bool
+	}{
+		{
+			name: "http_get",
+			code: `
+package main
+import "net/http"
+func main() {
+	http.Get("http://example.com")
+}`,
+			wantBool: false,
+		},
+		{
+			name: "valid_handler",
+			code: `
+package main
+import "net/http"
+func index(w http.ResponseWriter, r *http.Request) {
+	io.WriteString(w, "hello world")
+}`,
+			wantBool: true,
+		},
+		{
+			name: "overloaded_handler",
+			code: `
+package main
+import "net/http"
+func index(w http.ResponseWriter, r *http.Request, x string) {
+	io.WriteString(w, x)
+}`,
+			wantBool: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testAppDir := "tmp"
+			fileName := tt.name + ".go"
+			pkgs, err := createTestAppPackage(testAppDir, fileName, tt.code)
+			defer cleanupTestApp(t, testAppDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			decl, ok := pkgs[0].Syntax[0].Decls[1].(*dst.FuncDecl)
+			if !ok {
+				t.Fatal("code must contain only one function declaration")
+			}
+
+			gotBool := isHttpHandler(decl, pkgs[0])
+			if gotBool != tt.wantBool {
+				t.Errorf("isNetHttpMethodCannotInstrument() = %v, want %v", gotBool, tt.wantBool)
+			}
+		})
+	}
+}
