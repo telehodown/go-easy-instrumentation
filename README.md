@@ -6,7 +6,8 @@ Go is a compiled language with an opaque runtime, making it unable to support au
 [![asciicast](https://asciinema.org/a/r0Il7o2eMiZaLKHIlew3IL2nx.svg)](https://asciinema.org/a/r0Il7o2eMiZaLKHIlew3IL2nx)
 
 ## Preview Notice
-This is a preview of Go Easy Instrumentation. As such, it is still under active development. We appreciate any feedback you may have about any issues you find as you explore this tool.
+
+This feature is currently provided as part of a preview and is subject to our New Relic Experimental policies. Recommended code changes are suggestions only and should be subject to human review for accuracy, applicability, and appropriateness for your environment. This feature should only be used in non-critical, non-production environments that do not contain sensitive data. This project, its code, and the UX are under heavy development, and should be expected to change. Please take this into consideration when participating in this preview. If you encounter any issues, please report them using Github issues and fill out as much of the issue template as you can so we can improve this tool.
 
 The scope of what this tool can instrument in your application is limited to the listed features:
  - Capturing errors in any function wrapped or traced by a transaction
