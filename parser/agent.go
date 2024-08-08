@@ -276,6 +276,10 @@ func isNamedError(n *types.Named) bool {
 }
 
 func errorReturns(v *dst.CallExpr, pkg *decorator.Package) (int, bool) {
+	if pkg == nil {
+		return 0, false
+	}
+
 	astCall, ok := pkg.Decorator.Ast.Nodes[v]
 	if ok {
 		ty := pkg.TypesInfo.TypeOf(astCall.(*ast.CallExpr))
