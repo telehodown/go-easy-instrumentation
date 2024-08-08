@@ -139,9 +139,8 @@ func WrapHandleFunc(n dst.Node, manager *InstrumentationManager, c *dstutil.Curs
 	}
 }
 
-func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
-	stmts := make([]dst.Stmt, len(fn.Body.List)+1)
-	stmts[0] = &dst.AssignStmt{
+func txnFromContext(txnVariable string) *dst.AssignStmt {
+	return &dst.AssignStmt{
 		Decs: dst.AssignStmtDecorations{
 			NodeDecs: dst.NodeDecs{
 				After: dst.EmptyLine,
@@ -174,6 +173,12 @@ func txnFromCtx(fn *dst.FuncDecl, txnVariable string) {
 			},
 		},
 	}
+}
+
+// txnFromCtx injects a line of code that extracts a transaction from the context into the body of a function
+func defineTxnFromCtx(fn *dst.FuncDecl, txnVariable string) {
+	stmts := make([]dst.Stmt, len(fn.Body.List)+1)
+	stmts[0] = txnFromContext(txnVariable)
 	for i, stmt := range fn.Body.List {
 		stmts[i+1] = stmt
 	}
@@ -227,7 +232,7 @@ func InstrumentHandleFunction(n dst.Node, manager *InstrumentationManager, c *ds
 		txnName := "nrTxn"
 		newFn, ok := TraceFunction(manager, fn, txnName)
 		if ok {
-			txnFromCtx(newFn, txnName)
+			defineTxnFromCtx(newFn, txnName)
 			c.Replace(newFn)
 			manager.UpdateFunctionDeclaration(newFn)
 		}
