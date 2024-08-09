@@ -73,13 +73,13 @@ This tool works best with Git. It's a best practice to ensure that your applicat
 	git apply new-relic-instrumentation.diff
 	```
 
-Once the changes are applied, the application should run with the New Relic Go agent installed. If the agent installation is not working the way you want it to, you can easily recover by using common git commands. For example, you could try one of the following:
+Once the changes are applied, the application should run with the New Relic Go agent installed. If the agent installation is not working the way you want it to, you can easily recover by using common Git commands. For example, you could try one of the following:
 
 *  Stash the changes with `git stash`
 *  Revert the code to a previous commit
 
 ## Support
-This is an experimental product, and New Relic is not offering official support at the moment. Please create issues in github if you are encountering a problem that you're unable to resolve. When creating issues, its vital to include as much of the prompted for information as possible. This enables us to get to the root cause of the issue much more quickly. Please also make sure to search existing issues before creating a new one.
+This is an experimental product, and New Relic is not offering official support at the moment. Please create issues in Github if you are encountering a problem that you're unable to resolve. When creating issues, its vital to include as much of the prompted for information as possible. This enables us to get to the root cause of the issue much more quickly. Please also make sure to search existing issues before creating a new one.
 
 ## Contributing
 We encourage your contributions to improve the Go Easy Easy Instrumentation tool! Keep in mind when you submit your pull request, you'll need to sign the CLA via the click-through using CLA-Assistant. You only have to sign the CLA one time per project.
