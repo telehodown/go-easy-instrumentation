@@ -44,10 +44,18 @@ The scope of what this tool can instrument in your application is limited to the
 
 Before you start the installation steps below, make sure you have a version of Go installed that is within the support window for the current [Go programming language lifecycle](https://endoflife.date/go).
 
-1. Clone this repository to a directory on your system. For example: `git clone .../go-agent-pre-instrumentation`
-2. Go into that directory: `cd go-agent-pre-instrumentation`
-3. Resolve any third-party dependencies: `go mod tidy`
-
+1. Clone this repository to a directory on your system. For example: 
+	```sh
+	git clone .../go-agent-pre-instrumentation
+	```
+2. Go into that directory: 
+	```sh
+	cd go-agent-pre-instrumentation
+	```
+3. Resolve any third-party dependencies: 
+	```sh
+	go mod tidy
+	```
 ## Generate instrumentation suggestions
  
 This tool works best with Git. It's a best practice to ensure that your application is on a branch without any unstaged changes before applying any of the generated changes to it. After checking that, follow these steps to generate and apply the changes that install the New Relic Go agent in an application:
