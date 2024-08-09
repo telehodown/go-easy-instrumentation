@@ -1,7 +1,7 @@
 <a href="https://opensource.newrelic.com/oss-category/#new-relic-experimental"><picture><source media="(prefers-color-scheme: dark)" srcset="https://github.com/newrelic/opensource-website/raw/main/src/images/categories/dark/Experimental.png"><source media="(prefers-color-scheme: light)" srcset="https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Experimental.png"><img alt="New Relic Open Source experimental project banner." src="https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Experimental.png"></picture></a>
 
 # Go Easy Instrumentation
-Go is a compiled language with an opaque runtime, making it unable to support automatic instrumentation the way other languages are, which is why the New Relic Go Agent is designed as an SDK. That makes installing and getting the most out of the Go Agent something that requires much more upfront investment than other language agents. To address this, the Go Agent team created the Go Easy Instrumentation tool, which will do most of the instrumentation work for you by generating changes to your source code that instruments your application with the New Relic Go Agent.
+Go is a compiled language with an opaque runtime, making it unable to support automatic instrumentation like other languages. For this reason, the New Relic Go agent is designed as an SDK. Since the Go agent is an SDK, it requires more manual work to set up than agents for languages that support automatic instrumentation. In an effort to reduce that manual effort, the Go agent team created the tool Go Easy Instrumentation that is currently in preview. This tool will do most of the instrumentation work for you by generating changes to your source code that instrument your application with the New Relic Go agent.
 
 [![asciicast](https://asciinema.org/a/r0Il7o2eMiZaLKHIlew3IL2nx.svg)](https://asciinema.org/a/r0Il7o2eMiZaLKHIlew3IL2nx)
 
@@ -9,7 +9,22 @@ Go is a compiled language with an opaque runtime, making it unable to support au
 
 This feature is currently provided as part of a preview and is subject to our New Relic Experimental policies. Recommended code changes are suggestions only and should be subject to human review for accuracy, applicability, and appropriateness for your environment. This feature should only be used in non-critical, non-production environments that do not contain sensitive data. This project, its code, and the UX are under heavy development, and should be expected to change. Please take this into consideration when participating in this preview. If you encounter any issues, please report them using Github issues and fill out as much of the issue template as you can so we can improve this tool.
 
+## How it works
+
+This tool will not interfere with your application's operation, so it doesn't make any changes to your code directly. Here's what it does:
+
+* It analyzes your source code and identifies opportunities to instrument it.
+* It suggests changes to your code that use the New Relic Go agent SDK to capture telemetry data. 
+* You review those sugestions that are inserted in a `.diff` file and decide which changes to apply to your source code.
+
+As part of the analysis, this tool may invoke `go get` or other Go language toolchain commands which may modify your `go.mod` file, but not your actual source code.
+
+**IMPORTANT:** This tool can't detect if you already have New Relic instrumentation. Please only use this on applications without any instrumentation.
+
+## What is instrumented?
+
 The scope of what this tool can instrument in your application is limited to the listed features:
+
  - Capturing errors in any function wrapped or traced by a transaction
  - Tracing locally defined functions that are invoked in the application's main() method with a transaction
  - Tracing async functions and function literals with an async segment
@@ -20,32 +35,35 @@ The scope of what this tool can instrument in your application is limited to the
   - standard library
   - net/http
 
-Regardless of the scope, this tool will not interfere with your application's operation, so it doesn't make any changes to your code directly. Instead, it analyzes your source code, identifies opportunities to instrument it, then suggests changes to your code that use the New Relic Go Agent SDK to capture telemetry data. These additions will be in the form of a `.diff` file, which you should review before applying to your source code.
-
-As part of the analysis, this tool may invoke `go get` or other Go language toolchain commands which may modify your `go.mod` file, but not your actual source code.
-
-**Note** that this tool can not detect if you already have new relic instrumentation. Please only use this on applications without any instrumentation.
-
 ## Installation
-Please have a version of Go installed that is within the support window for the current [Go programming language lifecycle](https://endoflife.date/go).
+
+Before you start the installation steps below, make sure you have a version of Go installed that is within the support window for the current [Go programming language lifecycle](https://endoflife.date/go).
+
 1. Clone this repository to a directory on your system. For example: `git clone .../go-agent-pre-instrumentation`
 2. Go into that directory: `cd go-agent-pre-instrumentation`
 3. Resolve any third-party dependencies: `go mod tidy`
 
-## Getting Started
-This tool works best when used with git. It's a best practice to ensure that your application is on a branch without any unstaged changes before applying any of the generated changes to it. After checking that, follow these steps to generate and apply the changes that install the New Relic Go Agent in an application:
+## Generate instrumentation suggestions
+ 
+This tool works best with Git. It's a best practice to ensure that your application is on a branch without any unstaged changes before applying any of the generated changes to it. After checking that, follow these steps to generate and apply the changes that install the New Relic Go agent in an application:
 
-1. Go to parser directory: ```cd parser```
-2. Run the CLI tool: ```go run . -path ../my-application/``.  This will create a file named `new-relic-instrumentation.diff` in your working directory
-3. Please verify, and correct the contents of the `diff` file
-4. Apply the changes
+1. Go to parser directory: `cd parser`
+2. Run the following CLI command to create a file named `new-relic-instrumentation.diff` in your working directory: 
+  ```sh
+  go run . -path ../my-application/` 
+  ```
+3. Open the `.diff` file and verify or correct the contents.
+4. When you are satisfied with the instrumentation suggestions, apply the changes:
   ```sh
   mv new-relic-instrumentation.diff ../my-application/
   cd ../my-application
   git apply new-relic-instrumentation.diff
   ```
 
-Once the changes are applied, the application should run with the New Relic Go Agent installed. If the agent installation is not working the way you want it to, the changes can easily be undone using git tools by either stashing them with `git stash` or reverting the code to a previous commit.
+Once the changes are applied, the application should run with the New Relic Go agent installed. If the agent installation is not working the way you want it to, you can easily recover by using common git commands. For example, you could try one of the following:
+
+*  Stash the changes with `git stash`
+*  Revert the code to a previous commit
 
 ## Support
 This is an experimental product, and New Relic is not offering official support at the moment. Please create issues in github if you are encountering a problem that you're unable to resolve. When creating issues, its vital to include as much of the prompted for information as possible. This enables us to get to the root cause of the issue much more quickly. Please also make sure to search existing issues before creating a new one.
