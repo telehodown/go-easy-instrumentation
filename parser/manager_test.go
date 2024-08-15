@@ -464,3 +464,65 @@ func TestInstrumentationManager_AddTxnArgumentToFunctionDecl(t *testing.T) {
 		})
 	}
 }
+
+func TestInstrumentationManager_ShouldInstrumentFunction(t *testing.T) {
+	type fields struct {
+		userAppPath       string
+		diffFile          string
+		appName           string
+		agentVariableName string
+		currentPackage    string
+		packages          map[string]*PackageState
+	}
+	type args struct {
+		inv *invocationInfo
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   bool
+	}{
+		{
+			name: "function_should_be_instrumented",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			want: true,
+		},
+		{
+			name: "nil_invocation",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{inv: nil},
+			want: false,
+		},
+		{
+			name: "already_instrumented",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {traced: true}}}},
+				currentPackage: "foo",
+			},
+			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &InstrumentationManager{
+				userAppPath:       tt.fields.userAppPath,
+				diffFile:          tt.fields.diffFile,
+				appName:           tt.fields.appName,
+				agentVariableName: tt.fields.agentVariableName,
+				currentPackage:    tt.fields.currentPackage,
+				packages:          tt.fields.packages,
+			}
+			defer panicRecovery(t)
+			assert.Equal(t, tt.want, m.ShouldInstrumentFunction(tt.args.inv))
+		})
+	}
+}
