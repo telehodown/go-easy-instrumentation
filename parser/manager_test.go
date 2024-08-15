@@ -510,6 +510,15 @@ func TestInstrumentationManager_ShouldInstrumentFunction(t *testing.T) {
 			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
 			want: false,
 		},
+		{
+			name: "package_not_found",
+			fields: fields{
+				packages:       map[string]*PackageState{},
+				currentPackage: "foo",
+			},
+			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -523,6 +532,77 @@ func TestInstrumentationManager_ShouldInstrumentFunction(t *testing.T) {
 			}
 			defer panicRecovery(t)
 			assert.Equal(t, tt.want, m.ShouldInstrumentFunction(tt.args.inv))
+		})
+	}
+}
+
+func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
+	type fields struct {
+		userAppPath       string
+		diffFile          string
+		appName           string
+		agentVariableName string
+		currentPackage    string
+		packages          map[string]*PackageState
+	}
+	type args struct {
+		inv *invocationInfo
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   bool
+	}{
+		{
+			name: "requres_txn",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: true}}}},
+				currentPackage: "foo",
+			},
+			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			want: true,
+		},
+		{
+			name: "nil_invocation",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{inv: nil},
+			want: false,
+		},
+		{
+			name: "does_not_require_txn",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: false}}}},
+				currentPackage: "foo",
+			},
+			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			want: false,
+		},
+		{
+			name: "package_not_found",
+			fields: fields{
+				packages:       map[string]*PackageState{},
+				currentPackage: "foo",
+			},
+			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &InstrumentationManager{
+				userAppPath:       tt.fields.userAppPath,
+				diffFile:          tt.fields.diffFile,
+				appName:           tt.fields.appName,
+				agentVariableName: tt.fields.agentVariableName,
+				currentPackage:    tt.fields.currentPackage,
+				packages:          tt.fields.packages,
+			}
+			defer panicRecovery(t)
+			assert.Equal(t, tt.want, m.RequiresTransactionArgument(tt.args.inv))
 		})
 	}
 }
