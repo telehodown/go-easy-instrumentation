@@ -8,13 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func panicRecovery(t *testing.T) {
-	err := recover()
-	if err != nil {
-		t.Fatalf("%s recovered from panic: %+v", t.Name(), err)
-	}
-}
-
 func TestInstrumentationManager_AddImport(t *testing.T) {
 	type fields struct {
 		userAppPath       string
