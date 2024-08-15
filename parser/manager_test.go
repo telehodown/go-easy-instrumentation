@@ -330,6 +330,15 @@ func TestInstrumentationManager_GetPackageFunctionInvocation(t *testing.T) {
 			args: args{node: &dst.CallExpr{Fun: &dst.Ident{Name: "bar", Path: "fmt"}}},
 			want: nil,
 		},
+		{
+			name: "ignore_block_statements",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {}},
+				currentPackage: "foo",
+			},
+			args: args{node: &dst.BlockStmt{List: []dst.Stmt{&dst.ExprStmt{X: &dst.CallExpr{Fun: &dst.Ident{Name: "bar"}}}}}},
+			want: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -341,8 +350,117 @@ func TestInstrumentationManager_GetPackageFunctionInvocation(t *testing.T) {
 				currentPackage:    tt.fields.currentPackage,
 				packages:          tt.fields.packages,
 			}
+			defer panicRecovery(t)
 			got := m.GetPackageFunctionInvocation(tt.args.node)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestInstrumentationManager_AddTxnArgumentToFunctionDecl(t *testing.T) {
+	type fields struct {
+		userAppPath       string
+		diffFile          string
+		appName           string
+		agentVariableName string
+		currentPackage    string
+		packages          map[string]*PackageState
+	}
+	type args struct {
+		decl       *dst.FuncDecl
+		txnVarName string
+	}
+	tests := []struct {
+		name           string
+		fields         fields
+		args           args
+		want           *dst.FuncDecl
+		wantRequireTxn bool
+	}{
+		{
+			name: "simple_passing_case",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				decl:       &dst.FuncDecl{Name: &dst.Ident{Name: "bar"}, Type: &dst.FuncType{Params: &dst.FieldList{}}},
+				txnVarName: "txn",
+			},
+			want: &dst.FuncDecl{
+				Name: &dst.Ident{Name: "bar"},
+				Type: &dst.FuncType{
+					Params: &dst.FieldList{
+						List: []*dst.Field{{
+							Names: []*dst.Ident{dst.NewIdent("txn")},
+							Type: &dst.StarExpr{
+								X: &dst.SelectorExpr{
+									X:   dst.NewIdent("newrelic"),
+									Sel: dst.NewIdent("Transaction"),
+								},
+							},
+						}},
+					},
+				},
+			},
+			wantRequireTxn: true,
+		},
+		{
+			name: "simple_case_nil_params",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				decl:       &dst.FuncDecl{Name: &dst.Ident{Name: "bar"}, Type: &dst.FuncType{Params: nil}},
+				txnVarName: "txn",
+			},
+			want: &dst.FuncDecl{
+				Name: &dst.Ident{Name: "bar"},
+				Type: &dst.FuncType{
+					Params: &dst.FieldList{
+						List: []*dst.Field{{
+							Names: []*dst.Ident{dst.NewIdent("txn")},
+							Type: &dst.StarExpr{
+								X: &dst.SelectorExpr{
+									X:   dst.NewIdent("newrelic"),
+									Sel: dst.NewIdent("Transaction"),
+								},
+							},
+						}},
+					},
+				},
+			},
+			wantRequireTxn: true,
+		},
+		{
+			name: "nil_function_declaration",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				decl:       nil,
+				txnVarName: "txn",
+			},
+			want:           nil,
+			wantRequireTxn: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &InstrumentationManager{
+				userAppPath:       tt.fields.userAppPath,
+				diffFile:          tt.fields.diffFile,
+				appName:           tt.fields.appName,
+				agentVariableName: tt.fields.agentVariableName,
+				currentPackage:    tt.fields.currentPackage,
+				packages:          tt.fields.packages,
+			}
+			defer panicRecovery(t)
+			m.AddTxnArgumentToFunctionDecl(tt.args.decl, tt.args.txnVarName)
+			assert.Equal(t, tt.want, tt.args.decl)
+			assert.Equal(t, tt.wantRequireTxn, m.packages[m.currentPackage].tracedFuncs["bar"].requiresTxn)
 		})
 	}
 }

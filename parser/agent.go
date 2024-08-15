@@ -190,7 +190,7 @@ func InstrumentMain(mainFunctionNode dst.Node, manager *InstrumentationManager, 
 						_, wasModified := TraceFunction(manager, decl, defaultTxnName)
 						if wasModified {
 							// add transaction to declaration arguments
-							manager.AddTxnArgumentToFunctionDecl(decl, defaultTxnName, invInfo.functionName)
+							manager.AddTxnArgumentToFunctionDecl(decl, defaultTxnName)
 							manager.AddImport(newrelicAgentImport)
 						}
 						manager.SetPackage(rootPkg)
@@ -409,7 +409,7 @@ func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName
 					manager.SetPackage(invInfo.packageName)
 					decl := manager.GetDeclaration(invInfo.functionName)
 					TraceFunction(manager, decl, txnVarName)
-					manager.AddTxnArgumentToFunctionDecl(decl, txnVarName, invInfo.functionName)
+					manager.AddTxnArgumentToFunctionDecl(decl, txnVarName)
 					manager.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", invInfo.functionName), txnVarName)}, decl.Body.List...)
 				}
@@ -431,7 +431,7 @@ func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName
 				decl := manager.GetDeclaration(invInfo.functionName)
 				_, downstreamFunctionTraced = TraceFunction(manager, decl, txnVarName)
 				if downstreamFunctionTraced {
-					manager.AddTxnArgumentToFunctionDecl(decl, txnVarName, invInfo.functionName)
+					manager.AddTxnArgumentToFunctionDecl(decl, txnVarName)
 					manager.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(invInfo.functionName, txnVarName)}, decl.Body.List...)
 				}

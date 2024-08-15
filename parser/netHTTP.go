@@ -291,7 +291,7 @@ func isNetHttpClientDefinition(stmt *dst.AssignStmt) bool {
 // looks for the following pattern: client := &http.Client{}
 func InstrumentHttpClient(n dst.Node, manager *InstrumentationManager, c *dstutil.Cursor) {
 	stmt, ok := n.(*dst.AssignStmt)
-	if ok && isNetHttpClientDefinition(stmt) && c.Index() >= 0  && n.Decorations() != nil {
+	if ok && isNetHttpClientDefinition(stmt) && c.Index() >= 0 && n.Decorations() != nil {
 		c.InsertAfter(injectRoundTripper(stmt.Lhs[0], n.Decorations().After)) // add roundtripper to transports
 		stmt.Decs.After = dst.None
 		manager.AddImport(newrelicAgentImport)
@@ -353,8 +353,7 @@ func CannotInstrumentHttpMethod(n dst.Node, manager *InstrumentationManager, c *
 
 func startExternalSegment(request dst.Expr, txnVar, segmentVar string, nodeDecs *dst.NodeDecs) *dst.AssignStmt {
 	// copy all preceeding decorations from the previous node
-	decs := dst.AssignStmtDecorations{
-	}
+	decs := dst.AssignStmtDecorations{}
 	if nodeDecs != nil {
 		decs.NodeDecs = dst.NodeDecs{
 			Before: nodeDecs.Before,

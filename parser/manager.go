@@ -184,19 +184,37 @@ func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) *in
 
 // AddTxnArgumentToFuncDecl adds a transaction argument to the declaration of a function. This marks that function as needing a transaction,
 // and can be looked up by name to know that the last argument is a transaction.
-func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl, txnVarName, functionName string) {
-	decl.Type.Params.List = append(decl.Type.Params.List, &dst.Field{
-		Names: []*dst.Ident{dst.NewIdent(txnVarName)},
-		Type: &dst.StarExpr{
-			X: &dst.SelectorExpr{
-				X:   dst.NewIdent("newrelic"),
-				Sel: dst.NewIdent("Transaction"),
+func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl, txnVarName string) {
+	if decl == nil {
+		return
+	}
+
+	if decl.Type.Params == nil {
+		decl.Type.Params = &dst.FieldList{
+			List: []*dst.Field{{
+				Names: []*dst.Ident{dst.NewIdent(txnVarName)},
+				Type: &dst.StarExpr{
+					X: &dst.SelectorExpr{
+						X:   dst.NewIdent("newrelic"),
+						Sel: dst.NewIdent("Transaction"),
+					},
+				},
+			}},
+		}
+	} else {
+		decl.Type.Params.List = append(decl.Type.Params.List, &dst.Field{
+			Names: []*dst.Ident{dst.NewIdent(txnVarName)},
+			Type: &dst.StarExpr{
+				X: &dst.SelectorExpr{
+					X:   dst.NewIdent("newrelic"),
+					Sel: dst.NewIdent("Transaction"),
+				},
 			},
-		},
-	})
+		})
+	}
 	state, ok := m.packages[m.currentPackage]
 	if ok {
-		fn, ok := state.tracedFuncs[functionName]
+		fn, ok := state.tracedFuncs[decl.Name.Name]
 		if ok {
 			fn.requiresTxn = true
 		}
