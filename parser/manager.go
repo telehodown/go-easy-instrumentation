@@ -141,12 +141,16 @@ func (m *InstrumentationManager) UpdateFunctionDeclaration(decl *dst.FuncDecl) {
 	}
 }
 
+type invocationInfo struct {
+	functionName string
+	packageName  string
+	call         *dst.CallExpr
+}
+
 // GetPackageFunctionInvocation returns the name of the function being invoked, and the expression containing the call
 // where that invocation occurs if a function is declared in this package.
-func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (string, string, *dst.CallExpr) {
-	fnName := ""
-	packageName := ""
-	var pkgCall *dst.CallExpr
+func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) *invocationInfo {
+	var invInfo *invocationInfo
 
 	dst.Inspect(node, func(n dst.Node) bool {
 		switch v := n.(type) {
@@ -162,9 +166,11 @@ func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 				}
 				_, ok := m.packages[path]
 				if ok {
-					fnName = functionCallIdent.Name
-					packageName = path
-					pkgCall = call
+					invInfo = &invocationInfo{
+						functionName: functionCallIdent.Name,
+						packageName:  path,
+						call:         call,
+					}
 					return false
 				}
 			}
@@ -173,7 +179,7 @@ func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 		return true
 	})
 
-	return fnName, packageName, pkgCall
+	return invInfo
 }
 
 // AddTxnArgumentToFuncDecl adds a transaction argument to the declaration of a function. This marks that function as needing a transaction,
@@ -198,14 +204,14 @@ func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl
 }
 
 // IsTracingComplete returns true if a function has all the tracing it needs added to it.
-func (m *InstrumentationManager) ShouldInstrumentFunction(functionName, packageName string) bool {
-	if functionName == "" || packageName == "" {
+func (m *InstrumentationManager) ShouldInstrumentFunction(inv *invocationInfo) bool {
+	if inv == nil {
 		return false
 	}
 
-	state, ok := m.packages[packageName]
+	state, ok := m.packages[inv.packageName]
 	if ok {
-		v, ok := state.tracedFuncs[functionName]
+		v, ok := state.tracedFuncs[inv.functionName]
 		if ok {
 			return !v.traced
 		}
@@ -216,13 +222,14 @@ func (m *InstrumentationManager) ShouldInstrumentFunction(functionName, packageN
 
 // RequiresTransactionArgument returns true if a modified function needs a transaction as an argument.
 // This can be used to check if transactions should be passed by callers.
-func (m *InstrumentationManager) RequiresTransactionArgument(functionName string) bool {
-	if functionName == "" {
+func (m *InstrumentationManager) RequiresTransactionArgument(inv *invocationInfo) bool {
+	if inv == nil {
 		return false
 	}
+
 	state, ok := m.packages[m.currentPackage]
 	if ok {
-		v, ok := state.tracedFuncs[functionName]
+		v, ok := state.tracedFuncs[inv.functionName]
 		if ok {
 			return v.requiresTxn
 		}
