@@ -331,14 +331,15 @@ func (m *InstrumentationManager) AddRequiredModules() {
 	}
 }
 
-func (m *InstrumentationManager) InstrumentPackages() error {
+// InstrumentPackages applies instrumentation to all functions in the package.
+func (m *InstrumentationManager) InstrumentPackages(instrumentationFunctions ...StatelessInstrumentationFunc) error {
 	// Create a call graph of all calls made to functions in this package
 	err := tracePackageFunctionCalls(m)
 	if err != nil {
 		return err
 	}
 
-	instrumentPackages(m, InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
+	instrumentPackages(m, instrumentationFunctions...)
 
 	return nil
 }
