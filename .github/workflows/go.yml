@@ -28,5 +28,5 @@ jobs:
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v4
         with:
-          verbose: ${{ ACTIONS_RUNNER_DEBUG }}
+          verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
