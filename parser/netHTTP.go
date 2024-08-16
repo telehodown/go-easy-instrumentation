@@ -461,7 +461,8 @@ func addTxnToRequestContext(request dst.Expr, txnVar string, nodeDecs *dst.NodeD
 	}
 }
 
-func getHttpResponseExpr(manager *InstrumentationManager, stmt dst.Stmt) dst.Expr {
+// getHttpResponseVariable returns the expression that contains an object of `*net/http.Response` type
+func getHttpResponseVariable(manager *InstrumentationManager, stmt dst.Stmt) dst.Expr {
 	var expression dst.Expr
 	pkg := manager.GetDecoratorPackage()
 	dst.Inspect(stmt, func(n dst.Node) bool {
@@ -507,7 +508,7 @@ func ExternalHttpCall(manager *InstrumentationManager, stmt dst.Stmt, c *dstutil
 			segmentName := "externalSegment"
 			c.InsertBefore(startExternalSegment(requestObject, txnName, segmentName, stmt.Decorations()))
 			c.InsertAfter(endExternalSegment(segmentName, stmt.Decorations()))
-			responseVar := getHttpResponseExpr(manager, stmt)
+			responseVar := getHttpResponseVariable(manager, stmt)
 			manager.AddImport(newrelicAgentImport)
 			if responseVar != nil {
 				c.InsertAfter(captureHttpResponse(segmentName, responseVar))

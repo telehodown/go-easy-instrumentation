@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestInstrumentationManager_AddImport(t *testing.T) {
+func Test_AddImport(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -69,7 +69,7 @@ func TestInstrumentationManager_AddImport(t *testing.T) {
 	}
 }
 
-func TestInstrumentationManager_GetImports(t *testing.T) {
+func Test_GetImports(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -131,7 +131,7 @@ func TestInstrumentationManager_GetImports(t *testing.T) {
 	}
 }
 
-func TestInstrumentationManager_CreateFunctionDeclaration(t *testing.T) {
+func Test_CreateFunctionDeclaration(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -207,7 +207,7 @@ func TestInstrumentationManager_CreateFunctionDeclaration(t *testing.T) {
 	}
 }
 
-func TestInstrumentationManager_UpdateFunctionDeclaration(t *testing.T) {
+func Test_UpdateFunctionDeclaration(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -269,7 +269,7 @@ func TestInstrumentationManager_UpdateFunctionDeclaration(t *testing.T) {
 }
 
 // What if there are two instrumentable function invocations in a statement?
-func TestInstrumentationManager_GetPackageFunctionInvocation(t *testing.T) {
+func Test_GetPackageFunctionInvocation(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -350,7 +350,7 @@ func TestInstrumentationManager_GetPackageFunctionInvocation(t *testing.T) {
 	}
 }
 
-func TestInstrumentationManager_AddTxnArgumentToFunctionDecl(t *testing.T) {
+func Test_AddTxnArgumentToFunctionDecl(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -458,7 +458,7 @@ func TestInstrumentationManager_AddTxnArgumentToFunctionDecl(t *testing.T) {
 	}
 }
 
-func TestInstrumentationManager_ShouldInstrumentFunction(t *testing.T) {
+func Test_ShouldInstrumentFunction(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string
@@ -532,7 +532,7 @@ func TestInstrumentationManager_ShouldInstrumentFunction(t *testing.T) {
 	}
 }
 
-func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
+func Test_RequiresTransactionArgument(t *testing.T) {
 	type fields struct {
 		userAppPath       string
 		diffFile          string

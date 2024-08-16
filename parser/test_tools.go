@@ -46,3 +46,23 @@ func panicRecovery(t *testing.T) {
 		t.Fatalf("%s recovered from panic: %+v\n\n%s", t.Name(), err, debug.Stack())
 	}
 }
+
+func newTestingInstrumentationManager(t *testing.T, code string) *InstrumentationManager {
+	defer panicRecovery(t)
+
+	testAppDir := "tmp"
+	fileName := "app.go"
+	pkgs, err := createTestAppPackage(testAppDir, fileName, code)
+	defer cleanupTestApp(t, testAppDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appName := defaultAppName
+	varName := defaultAgentVariableName
+	diffFile := filepath.Join(testAppDir, defaultDiffFileName)
+
+	manager := NewInstrumentationManager(pkgs, appName, varName, diffFile, testAppDir)
+	manager.SetPackage("parser/tmp")
+	return manager
+}

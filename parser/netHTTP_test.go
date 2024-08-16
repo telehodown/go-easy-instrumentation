@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dave/dst"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_isNetHttpClient(t *testing.T) {
@@ -870,6 +871,109 @@ func Test_defineTxnFromCtx(t *testing.T) {
 			defineTxnFromCtx(tt.args.fn, tt.args.txnVariable)
 			if !reflect.DeepEqual(tt.args.fn.Body.List[0], expectStmt) {
 				t.Errorf("expected the function body to contain the statement %v but got %v", expectStmt, tt.args.fn.Body.List[0])
+			}
+		})
+	}
+}
+
+func Test_getHttpResponseVariable(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		linenum  int
+		wantExpr dst.Expr
+	}{
+		{
+			name: "basic response assignment",
+			code: `
+package main
+import "net/http"
+func main() {
+	a := &http.Response{}
+}`,
+			linenum:  0,
+			wantExpr: dst.NewIdent("a"),
+		},
+		{
+			name: "capture assignment from http.Get",
+			code: `
+package main
+import "net/http"
+func main() {
+	resp, err := http.Get("http://example.com")
+}`,
+			linenum:  0,
+			wantExpr: dst.NewIdent("resp"),
+		},
+		{
+			name: "no response assigned",
+			code: `
+package main
+import "net/http"
+func main() {
+	a := &http.Client{}
+}`,
+			linenum:  0,
+			wantExpr: nil,
+		},
+		{
+			name: "response is assigned to complex object",
+			code: `
+package main
+import "net/http"
+func main() {
+	type respInfo struct {
+		response *http.Response
+		notes string
+	}
+	info := respInfo{}
+	info.response := &http.Client{}
+}`,
+			linenum: 2,
+			wantExpr: &dst.SelectorExpr{
+				X:   dst.NewIdent("info"),
+				Sel: dst.NewIdent("response"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := newTestingInstrumentationManager(t, tt.code)
+			pkg := manager.GetDecoratorPackage()
+			stmt := pkg.Syntax[0].Decls[1].(*dst.FuncDecl).Body.List[tt.linenum]
+			gotExpr := getHttpResponseVariable(manager, stmt)
+			switch expect := tt.wantExpr.(type) {
+			case *dst.Ident:
+				got, ok := gotExpr.(*dst.Ident)
+				if !ok {
+					t.Fatalf("expected expression to be an identifier but got %T", gotExpr)
+				}
+				if got.Name != expect.Name {
+					t.Errorf("expected getHttpResponseVariable() to return an identifier with the name \"%s\" but got \"%s\"", expect.Name, got.Name)
+				}
+			case *dst.SelectorExpr:
+				got, ok := gotExpr.(*dst.SelectorExpr)
+				if !ok {
+					t.Fatalf("expected expression to be a selector expression but got %T", gotExpr)
+				}
+				if got.Sel.Name != expect.Sel.Name {
+					t.Errorf("expected getHttpResponseVariable() to return a selector expression with the selector \"%s\" but got \"%s\"", expect.Sel.Name, got.Sel.Name)
+				}
+				x, ok := got.X.(*dst.Ident)
+				if !ok {
+					t.Fatalf("expected the returned selector expression to have an identifier as the X but got %T", got.X)
+				}
+				if x.Name != expect.X.(*dst.Ident).Name {
+					t.Errorf("expected getHttpResponseVariable() to return a selector expression with the X identifier named \"%s\" but got \"%s\"", expect.X.(*dst.Ident).Name, x.Name)
+				}
+			case nil:
+				if gotExpr != nil {
+					t.Errorf("expected getHttpResponseVariable() to return nil but got %T", gotExpr)
+				}
+			default:
+				// catch all
+				assert.Equal(t, tt.wantExpr, gotExpr)
 			}
 		})
 	}
