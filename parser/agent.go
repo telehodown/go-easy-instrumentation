@@ -182,6 +182,7 @@ func InstrumentMain(mainFunctionNode dst.Node, manager *InstrumentationManager, 
 				switch v := node.(type) {
 				case *dst.ExprStmt:
 					rootPkg := manager.currentPackage
+					txnVarName := defaultTxnName
 					invInfo := manager.GetPackageFunctionInvocation(v)
 					// check if the called function has been instrumented already, if not, instrument it.
 					if manager.ShouldInstrumentFunction(invInfo) {
@@ -197,8 +198,7 @@ func InstrumentMain(mainFunctionNode dst.Node, manager *InstrumentationManager, 
 					}
 					// pass the called function a transaction if needed
 					// always check c.Index >= 0 to avoid panics when using c.Insert methods
-					if manager.RequiresTransactionArgument(invInfo) && c.Index() >= 0 {
-						txnVarName := defaultTxnName
+					if manager.RequiresTransactionArgument(invInfo, txnVarName) && c.Index() >= 0 {
 						c.InsertBefore(startTransaction(manager.agentVariableName, txnVarName, invInfo.functionName, txnStarted))
 						c.InsertAfter(endTransaction(txnVarName))
 						invInfo.call.Args = append(invInfo.call.Args, dst.NewIdent(defaultTxnName))
@@ -413,7 +413,7 @@ func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName
 					manager.AddImport(newrelicAgentImport)
 					decl.Body.List = append([]dst.Stmt{deferSegment(fmt.Sprintf("async %s", invInfo.functionName), txnVarName)}, decl.Body.List...)
 				}
-				if manager.RequiresTransactionArgument(invInfo) {
+				if manager.RequiresTransactionArgument(invInfo, txnVarName) {
 					invInfo.call.Args = append(invInfo.call.Args, txnNewGoroutine(txnVarName))
 					c.Replace(v)
 					TopLevelFunctionChanged = true
@@ -436,7 +436,7 @@ func TraceFunction(manager *InstrumentationManager, fn *dst.FuncDecl, txnVarName
 					decl.Body.List = append([]dst.Stmt{deferSegment(invInfo.functionName, txnVarName)}, decl.Body.List...)
 				}
 			}
-			if manager.RequiresTransactionArgument(invInfo) {
+			if manager.RequiresTransactionArgument(invInfo, txnVarName) {
 				invInfo.call.Args = append(invInfo.call.Args, dst.NewIdent(txnVarName))
 				TopLevelFunctionChanged = true
 			}

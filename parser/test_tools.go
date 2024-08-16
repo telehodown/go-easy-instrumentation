@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 
 	"github.com/dave/dst/decorator"
@@ -42,6 +43,6 @@ func cleanupTestApp(t *testing.T, appDirectoryName string) {
 func panicRecovery(t *testing.T) {
 	err := recover()
 	if err != nil {
-		t.Fatalf("%s recovered from panic: %+v", t.Name(), err)
+		t.Fatalf("%s recovered from panic: %+v\n\n%s", t.Name(), err, debug.Stack())
 	}
 }

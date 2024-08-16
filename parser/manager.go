@@ -238,9 +238,37 @@ func (m *InstrumentationManager) ShouldInstrumentFunction(inv *invocationInfo) b
 	return false
 }
 
+// conatinsTransactionArgument returns true if a function call contains a transaction argument.
+// This function works for async functions as well.
+func containsTransactionArgument(call *dst.CallExpr, txnName string) bool {
+	if call == nil || call.Args == nil {
+		return false
+	}
+
+	for _, arg := range call.Args {
+		switch v := arg.(type) {
+		case *dst.Ident:
+			if v.Name == txnName {
+				return true
+			}
+		case *dst.CallExpr:
+			sel, ok := v.Fun.(*dst.SelectorExpr)
+			if ok {
+				if sel.Sel.Name == "NewGoroutine" {
+					ident, ok := sel.X.(*dst.Ident)
+					if ok && ident.Name == txnName {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 // RequiresTransactionArgument returns true if a modified function needs a transaction as an argument.
 // This can be used to check if transactions should be passed by callers.
-func (m *InstrumentationManager) RequiresTransactionArgument(inv *invocationInfo) bool {
+func (m *InstrumentationManager) RequiresTransactionArgument(inv *invocationInfo, txnVariableName string) bool {
 	if inv == nil {
 		return false
 	}
@@ -248,7 +276,7 @@ func (m *InstrumentationManager) RequiresTransactionArgument(inv *invocationInfo
 	state, ok := m.packages[m.currentPackage]
 	if ok {
 		v, ok := state.tracedFuncs[inv.functionName]
-		if ok {
+		if ok && !containsTransactionArgument(inv.call, txnVariableName) {
 			return v.requiresTxn
 		}
 	}

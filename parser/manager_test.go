@@ -524,7 +524,10 @@ func TestInstrumentationManager_ShouldInstrumentFunction(t *testing.T) {
 				packages:          tt.fields.packages,
 			}
 			defer panicRecovery(t)
-			assert.Equal(t, tt.want, m.ShouldInstrumentFunction(tt.args.inv))
+			got := m.ShouldInstrumentFunction(tt.args.inv)
+			if got != tt.want {
+				t.Errorf("InstrumentationManager.ShouldInstrumentFunction() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -539,7 +542,8 @@ func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
 		packages          map[string]*PackageState
 	}
 	type args struct {
-		inv *invocationInfo
+		inv             *invocationInfo
+		txnVariableName string
 	}
 	tests := []struct {
 		name   string
@@ -553,8 +557,47 @@ func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
 				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: true}}}},
 				currentPackage: "foo",
 			},
-			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar", call: &dst.CallExpr{Args: []dst.Expr{}}},
+				txnVariableName: "txn",
+			},
 			want: true,
+		},
+		{
+			name: "call_contains_arguments",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: true}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar", call: &dst.CallExpr{Args: []dst.Expr{dst.NewIdent("baz")}}},
+				txnVariableName: "txn",
+			},
+			want: true,
+		},
+		{
+			name: "call_contains_txn_argument",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: true}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar", call: &dst.CallExpr{Args: []dst.Expr{dst.NewIdent("txn")}}},
+				txnVariableName: "txn",
+			},
+			want: false,
+		},
+		{
+			name: "call_contains_async_txn_argument",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: true}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar", call: &dst.CallExpr{Args: []dst.Expr{txnNewGoroutine("txn")}}},
+				txnVariableName: "txn",
+			},
+			want: false,
 		},
 		{
 			name: "nil_invocation",
@@ -562,7 +605,22 @@ func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
 				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
 				currentPackage: "foo",
 			},
-			args: args{inv: nil},
+			args: args{
+				inv:             nil,
+				txnVariableName: "txn",
+			},
+			want: false,
+		},
+		{
+			name: "nil_call_arguments",
+			fields: fields{
+				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {}}}},
+				currentPackage: "foo",
+			},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar", call: &dst.CallExpr{Args: nil}},
+				txnVariableName: "txn",
+			},
 			want: false,
 		},
 		{
@@ -571,7 +629,10 @@ func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
 				packages:       map[string]*PackageState{"foo": {tracedFuncs: map[string]*tracedFunction{"bar": {requiresTxn: false}}}},
 				currentPackage: "foo",
 			},
-			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar"},
+				txnVariableName: "txn",
+			},
 			want: false,
 		},
 		{
@@ -580,7 +641,10 @@ func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
 				packages:       map[string]*PackageState{},
 				currentPackage: "foo",
 			},
-			args: args{inv: &invocationInfo{packageName: "foo", functionName: "bar"}},
+			args: args{
+				inv:             &invocationInfo{packageName: "foo", functionName: "bar"},
+				txnVariableName: "txn",
+			},
 			want: false,
 		},
 	}
@@ -595,7 +659,10 @@ func TestInstrumentationManager_RequiresTransactionArgument(t *testing.T) {
 				packages:          tt.fields.packages,
 			}
 			defer panicRecovery(t)
-			assert.Equal(t, tt.want, m.RequiresTransactionArgument(tt.args.inv))
+			got := m.RequiresTransactionArgument(tt.args.inv, tt.args.txnVariableName)
+			if got != tt.want {
+				t.Errorf("InstrumentationManager.RequiresTransactionArgument() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
