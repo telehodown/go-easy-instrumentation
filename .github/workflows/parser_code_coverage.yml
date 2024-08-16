@@ -18,7 +18,9 @@ jobs:
         uses: actions/setup-go@v5
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          cd parser
+          go mod download
 
       - name: Run tests
         run: |
