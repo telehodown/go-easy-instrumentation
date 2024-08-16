@@ -1,0 +1,29 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Unit Test Coverage
+
+on:
+  push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      - name: Set up Go
+        uses: actions/setup-go@v5
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: |
+          cd parser
+          go test -coverprofile=coverage.txt
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          verbose: ${{ ACTIONS_RUNNER_DEBUG }}
+          token: ${{ secrets.CODECOV_TOKEN }}
