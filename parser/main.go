@@ -32,7 +32,7 @@ func main() {
 	}
 
 	manager := NewInstrumentationManager(pkgs, cfg.AppName, cfg.AgentVariableName, cfg.DiffFile, cfg.PackagePath)
-	err = manager.InstrumentPackages()
+	err = manager.InstrumentPackages(InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
 	if err != nil {
 		log.Fatal(err)
 	}

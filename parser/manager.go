@@ -141,12 +141,16 @@ func (m *InstrumentationManager) UpdateFunctionDeclaration(decl *dst.FuncDecl) {
 	}
 }
 
+type invocationInfo struct {
+	functionName string
+	packageName  string
+	call         *dst.CallExpr
+}
+
 // GetPackageFunctionInvocation returns the name of the function being invoked, and the expression containing the call
 // where that invocation occurs if a function is declared in this package.
-func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (string, string, *dst.CallExpr) {
-	fnName := ""
-	packageName := ""
-	var pkgCall *dst.CallExpr
+func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) *invocationInfo {
+	var invInfo *invocationInfo
 
 	dst.Inspect(node, func(n dst.Node) bool {
 		switch v := n.(type) {
@@ -162,9 +166,11 @@ func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 				}
 				_, ok := m.packages[path]
 				if ok {
-					fnName = functionCallIdent.Name
-					packageName = path
-					pkgCall = call
+					invInfo = &invocationInfo{
+						functionName: functionCallIdent.Name,
+						packageName:  path,
+						call:         call,
+					}
 					return false
 				}
 			}
@@ -173,24 +179,42 @@ func (m *InstrumentationManager) GetPackageFunctionInvocation(node dst.Node) (st
 		return true
 	})
 
-	return fnName, packageName, pkgCall
+	return invInfo
 }
 
 // AddTxnArgumentToFuncDecl adds a transaction argument to the declaration of a function. This marks that function as needing a transaction,
 // and can be looked up by name to know that the last argument is a transaction.
-func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl, txnVarName, functionName string) {
-	decl.Type.Params.List = append(decl.Type.Params.List, &dst.Field{
-		Names: []*dst.Ident{dst.NewIdent(txnVarName)},
-		Type: &dst.StarExpr{
-			X: &dst.SelectorExpr{
-				X:   dst.NewIdent("newrelic"),
-				Sel: dst.NewIdent("Transaction"),
+func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl, txnVarName string) {
+	if decl == nil {
+		return
+	}
+
+	if decl.Type.Params == nil {
+		decl.Type.Params = &dst.FieldList{
+			List: []*dst.Field{{
+				Names: []*dst.Ident{dst.NewIdent(txnVarName)},
+				Type: &dst.StarExpr{
+					X: &dst.SelectorExpr{
+						X:   dst.NewIdent("newrelic"),
+						Sel: dst.NewIdent("Transaction"),
+					},
+				},
+			}},
+		}
+	} else {
+		decl.Type.Params.List = append(decl.Type.Params.List, &dst.Field{
+			Names: []*dst.Ident{dst.NewIdent(txnVarName)},
+			Type: &dst.StarExpr{
+				X: &dst.SelectorExpr{
+					X:   dst.NewIdent("newrelic"),
+					Sel: dst.NewIdent("Transaction"),
+				},
 			},
-		},
-	})
+		})
+	}
 	state, ok := m.packages[m.currentPackage]
 	if ok {
-		fn, ok := state.tracedFuncs[functionName]
+		fn, ok := state.tracedFuncs[decl.Name.Name]
 		if ok {
 			fn.requiresTxn = true
 		}
@@ -198,14 +222,14 @@ func (m *InstrumentationManager) AddTxnArgumentToFunctionDecl(decl *dst.FuncDecl
 }
 
 // IsTracingComplete returns true if a function has all the tracing it needs added to it.
-func (m *InstrumentationManager) ShouldInstrumentFunction(functionName, packageName string) bool {
-	if functionName == "" || packageName == "" {
+func (m *InstrumentationManager) ShouldInstrumentFunction(inv *invocationInfo) bool {
+	if inv == nil {
 		return false
 	}
 
-	state, ok := m.packages[packageName]
+	state, ok := m.packages[inv.packageName]
 	if ok {
-		v, ok := state.tracedFuncs[functionName]
+		v, ok := state.tracedFuncs[inv.functionName]
 		if ok {
 			return !v.traced
 		}
@@ -214,16 +238,45 @@ func (m *InstrumentationManager) ShouldInstrumentFunction(functionName, packageN
 	return false
 }
 
-// RequiresTransactionArgument returns true if a modified function needs a transaction as an argument.
-// This can be used to check if transactions should be passed by callers.
-func (m *InstrumentationManager) RequiresTransactionArgument(functionName string) bool {
-	if functionName == "" {
+// conatinsTransactionArgument returns true if a function call contains a transaction argument.
+// This function works for async functions as well.
+func containsTransactionArgument(call *dst.CallExpr, txnName string) bool {
+	if call == nil || call.Args == nil {
 		return false
 	}
+
+	for _, arg := range call.Args {
+		switch v := arg.(type) {
+		case *dst.Ident:
+			if v.Name == txnName {
+				return true
+			}
+		case *dst.CallExpr:
+			sel, ok := v.Fun.(*dst.SelectorExpr)
+			if ok {
+				if sel.Sel.Name == "NewGoroutine" {
+					ident, ok := sel.X.(*dst.Ident)
+					if ok && ident.Name == txnName {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// RequiresTransactionArgument returns true if a modified function needs a transaction as an argument.
+// This can be used to check if transactions should be passed by callers.
+func (m *InstrumentationManager) RequiresTransactionArgument(inv *invocationInfo, txnVariableName string) bool {
+	if inv == nil {
+		return false
+	}
+
 	state, ok := m.packages[m.currentPackage]
 	if ok {
-		v, ok := state.tracedFuncs[functionName]
-		if ok {
+		v, ok := state.tracedFuncs[inv.functionName]
+		if ok && !containsTransactionArgument(inv.call, txnVariableName) {
 			return v.requiresTxn
 		}
 	}
@@ -306,14 +359,15 @@ func (m *InstrumentationManager) AddRequiredModules() {
 	}
 }
 
-func (m *InstrumentationManager) InstrumentPackages() error {
+// InstrumentPackages applies instrumentation to all functions in the package.
+func (m *InstrumentationManager) InstrumentPackages(instrumentationFunctions ...StatelessInstrumentationFunc) error {
 	// Create a call graph of all calls made to functions in this package
 	err := tracePackageFunctionCalls(m)
 	if err != nil {
 		return err
 	}
 
-	instrumentPackages(m, InstrumentMain, InstrumentHandleFunction, InstrumentHttpClient, CannotInstrumentHttpMethod)
+	instrumentPackages(m, instrumentationFunctions...)
 
 	return nil
 }
